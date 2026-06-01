@@ -334,6 +334,8 @@ def run_collector(
                 has_signal = candidate_detector.has_selected_status_signal(
                     title=item.title,
                     raw_text=item.raw_text,
+                    url=item.url,
+                    source=source,
                     selected_statuses=selected_statuses,
                     db_keywords=active_keywords,
                 )

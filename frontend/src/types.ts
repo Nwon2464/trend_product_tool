@@ -81,6 +81,8 @@ export type SourceLog = {
   created_at: string;
 };
 
+export type ProductCandidateStatus = "new" | "watching" | "confirmed" | "ignored" | "purchased";
+
 export type ProductCandidate = {
   id: number;
   source_log_id: number;
@@ -93,7 +95,7 @@ export type ProductCandidate = {
   detected_reason: string;
   detected_keywords: string | null;
   profit_expectation: number;
-  candidate_status: string;
+  candidate_status: ProductCandidateStatus;
   created_at: string;
   updated_at: string;
 };

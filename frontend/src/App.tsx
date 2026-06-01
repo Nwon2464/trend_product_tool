@@ -20,6 +20,7 @@ import type {
   NotificationLog,
   Product,
   ProductCandidate,
+  ProductCandidateStatus,
   ProductInput,
   ScrapingJob,
   ScrapingJobEvent,
@@ -72,6 +73,25 @@ type TableRow = Array<ReactNode> | {
 };
 type SourceLogFilter = "すべて" | "候補検出" | "登録済み" | "未登録";
 type SourceLogStatus = "候補検出" | "登録済み" | "未登録";
+type CandidateStatusAction = {
+  status: ProductCandidateStatus;
+  label: string;
+};
+
+const candidateStatusLabels: Record<ProductCandidateStatus, string> = {
+  new: "新規",
+  watching: "監視中",
+  confirmed: "確認済み",
+  ignored: "無視",
+  purchased: "購入済み",
+};
+
+const candidateStatusActions: CandidateStatusAction[] = [
+  { status: "watching", label: "監視する" },
+  { status: "confirmed", label: "確認済み" },
+  { status: "ignored", label: "無視する" },
+  { status: "purchased", label: "購入済み" },
+];
 
 const emptyProduct: ProductInput = {
   category: "ポケモンカード",
@@ -195,6 +215,10 @@ function expectationLabel(score: number) {
   return "保留";
 }
 
+function candidateStatusLabel(status: ProductCandidateStatus) {
+  return candidateStatusLabels[status] ?? status;
+}
+
 function categoryTone(category: string) {
   if (category.includes("ポケモン")) return "pokemon";
   if (category.includes("ワンピース")) return "onepiece";
@@ -271,8 +295,6 @@ export default function App() {
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [keywordForm, setKeywordForm] = useState<KeywordInput>(emptyKeyword);
   const [sourceForm, setSourceForm] = useState<SourceInput>(emptySource);
-  const [, setMessage] = useState("");
-  const [, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
@@ -470,7 +492,6 @@ export default function App() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    setError("");
     try {
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
@@ -495,11 +516,12 @@ export default function App() {
       setProductCandidates(nextProductCandidates);
       setNotificationLogs(nextNotificationLogs);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "データの取得に失敗しました");
+      const errorMessage = err instanceof Error ? err.message : "データの取得に失敗しました";
+      addToast("error", errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [addToast, filters]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -554,46 +576,48 @@ export default function App() {
 
   async function submitProduct(event: FormEvent) {
     event.preventDefault();
-    setError("");
-    setMessage("");
     try {
+      const successMessage = editingProductId === null ? "商品を登録しました" : "商品を更新しました";
       if (editingProductId === null) {
         await api.createProduct(productForm);
       } else {
         await api.updateProduct(editingProductId, productForm);
-        setMessage("商品を更新しました");
       }
-      if (editingProductId === null) {
-        setMessage("商品を登録しました");
-      }
+      addToast("success", successMessage);
       setProductForm(emptyProduct);
       setEditingProductId(null);
       setIsProductModalOpen(false);
       setActiveTab("products");
       await loadAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "商品の保存に失敗しました");
+      const errorMessage = err instanceof Error ? err.message : "商品の保存に失敗しました";
+      addToast("error", errorMessage);
     }
   }
 
   async function deleteProduct(id: number) {
     if (!window.confirm("この商品を削除しますか？")) return;
-    await api.deleteProduct(id);
-    await loadAll();
+    try {
+      await api.deleteProduct(id);
+      addToast("success", "商品を削除しました");
+      await loadAll();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "商品の削除に失敗しました";
+      addToast("error", errorMessage);
+    }
   }
 
   async function submitKeyword(event: FormEvent) {
     event.preventDefault();
-    setError("");
-    setMessage("");
     try {
       await api.createKeyword(keywordForm);
       setKeywordForm(emptyKeyword);
       setIsKeywordModalOpen(false);
-      setMessage("キーワードを登録しました");
+      addToast("success", "キーワードを登録しました");
       await loadAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "キーワードの保存に失敗しました");
+      const errorMessage = err instanceof Error ? err.message : "キーワードの保存に失敗しました";
+      addToast("error", errorMessage);
     }
   }
 
@@ -608,23 +632,28 @@ export default function App() {
   }
 
   async function toggleKeyword(keyword: Keyword) {
-    await api.updateKeyword(keyword.id, { is_active: !keyword.is_active });
-    await loadAll();
+    try {
+      await api.updateKeyword(keyword.id, { is_active: !keyword.is_active });
+      addToast("success", keyword.is_active ? "キーワードを無効化しました" : "キーワードを有効化しました");
+      await loadAll();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "キーワードの更新に失敗しました";
+      addToast("error", errorMessage);
+    }
   }
 
   async function submitSource(event: FormEvent) {
     event.preventDefault();
-    setError("");
-    setMessage("");
     try {
       const createdSource = await api.createSource(sourceForm);
       setSources((current) => sortSourcesByNewest([createdSource, ...current.filter((source) => source.id !== createdSource.id)]));
       setSourceForm(emptySource);
       setIsSourceModalOpen(false);
-      setMessage("情報源を登録しました。スクレイピング準備にも反映されています。");
+      addToast("success", "情報源URLを登録しました");
       await loadAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "情報源の保存に失敗しました");
+      const errorMessage = err instanceof Error ? err.message : "情報源の保存に失敗しました";
+      addToast("error", errorMessage);
     }
   }
 
@@ -639,83 +668,79 @@ export default function App() {
   }
 
   async function toggleSource(source: Source) {
-    setError("");
-    setMessage("");
     try {
       await api.updateSource(source.id, { is_active: !source.is_active });
-      setMessage(source.is_active ? "情報源を無効化しました" : "情報源を有効化しました");
+      addToast("success", source.is_active ? "情報源を無効化しました" : "情報源を有効化しました");
       await loadAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "情報源の更新に失敗しました");
+      const errorMessage = err instanceof Error ? err.message : "情報源の更新に失敗しました";
+      addToast("error", errorMessage);
     }
   }
 
   async function deleteSource(source: Source) {
-    setError("");
-    setMessage("");
     try {
       await api.deleteSource(source.id);
       setSources((current) => current.filter((item) => item.id !== source.id));
-      setMessage("情報源を削除しました");
+      addToast("success", "情報源を削除しました");
       await loadAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "情報源の削除に失敗しました");
+      const errorMessage = err instanceof Error ? err.message : "情報源の削除に失敗しました";
+      addToast("error", errorMessage);
     }
   }
 
   async function deleteVisibleUnregisteredLogs() {
     if (deletableUnregisteredLogs.length === 0) return;
 
-    setError("");
-    setMessage("");
     try {
       for (const log of deletableUnregisteredLogs) {
         await api.deleteSourceLog(log.id);
       }
-      setMessage(`未登録ログを${deletableUnregisteredLogs.length}件削除しました`);
+      addToast("success", `未登録ログを${deletableUnregisteredLogs.length}件削除しました`);
       setIsDeleteLogsModalOpen(false);
       await loadAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "未登録ログの削除に失敗しました");
+      const errorMessage = err instanceof Error ? err.message : "未登録ログの削除に失敗しました";
+      addToast("error", errorMessage);
     }
   }
 
   async function deleteSourceLog(log: SourceLog) {
     const status = getSourceLogStatus(log, productSourceUrls, candidatesBySourceLogId);
-    setError("");
-    setMessage("");
     if (status !== "未登録") {
-      setError("候補検出済み、登録済みの取得ログは削除できません");
+      const errorMessage = "候補検出済み、登録済みの取得ログは削除できません";
+      addToast("error", errorMessage);
       return;
     }
 
     try {
       await api.deleteSourceLog(log.id);
-      setMessage("未登録ログを削除しました");
+      addToast("success", "未登録ログを削除しました");
       await loadAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "取得ログの削除に失敗しました");
+      const errorMessage = err instanceof Error ? err.message : "取得ログの削除に失敗しました";
+      addToast("error", errorMessage);
     }
   }
 
   async function runCollector(source: Source) {
-    setError("");
-    setMessage("");
     try {
       const result = await api.runCollector(source.id);
       if (result.skipped_reason === "minimum_interval") {
-        setMessage("直近で取得済みのためスキップ");
+        addToast("warning", "直近で取得済みのためスキップ");
       } else if (result.skipped_reason === "robots_disallow") {
-        setMessage("robots.txt により取得をスキップしました");
+        addToast("warning", "robots.txt により取得をスキップしました");
       } else if (result.skipped_reason === "no_usable_items") {
-        setMessage("保存できる対象URLが見つかりませんでした");
+        addToast("warning", "保存できる対象URLが見つかりませんでした");
       } else {
-        setMessage(`取得完了: ${result.candidates.length}件候補作成 / ${result.created_count}件ログ保存 / ${result.skipped_count}件スキップ`);
+        addToast("success", `取得完了: ${result.candidates.length}件候補作成 / ${result.created_count}件ログ保存 / ${result.skipped_count}件スキップ`);
       }
       await loadAll();
       setActiveTab("collection");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "取得に失敗しました");
+      const errorMessage = err instanceof Error ? err.message : "取得に失敗しました";
+      addToast("error", errorMessage);
     }
   }
 
@@ -754,8 +779,6 @@ export default function App() {
   }
 
   async function startScrapingJob(targets: (typeof scrapingUrls)[number][]) {
-    setError("");
-    setMessage("");
     setIsScrapingRunning(true);
     setActiveScrapingJob(null);
     eventSourceRef.current?.close();
@@ -796,7 +819,6 @@ export default function App() {
       const errorMessage = err instanceof Error ? err.message : "Scraping job の作成に失敗しました";
       appendTerminalLine("error", errorMessage);
       addToast("error", errorMessage);
-      setError(errorMessage);
       setIsScrapingRunning(false);
     }
   }
@@ -871,7 +893,6 @@ export default function App() {
       });
       void loadAll().then(() => {
         setActiveTab("collection");
-        setMessage(data.status === "completed" ? "Scraping job が完了しました" : "Scraping job が失敗しました");
       });
     });
 
@@ -883,7 +904,6 @@ export default function App() {
       }
       setIsScrapingRunning(false);
       addToast("error", "Scraping Job に失敗しました");
-      setError("SSE接続に失敗しました");
     };
   }
 
@@ -917,7 +937,7 @@ export default function App() {
         log.raw_text ? `取得内容: ${log.raw_text}` : "",
       ].filter(Boolean).join("\n"),
     });
-    setMessage(candidate ? "商品候補の内容を商品登録フォームに反映しました" : "取得ログの内容を商品登録フォームに反映しました");
+    addToast("info", candidate ? "商品候補の内容を商品登録フォームに反映しました" : "取得ログの内容を商品登録フォームに反映しました");
     setIsProductModalOpen(true);
   }
 
@@ -945,8 +965,22 @@ export default function App() {
         log?.raw_text ? `取得内容: ${log.raw_text}` : "",
       ].filter(Boolean).join("\n"),
     });
-    setMessage("商品候補の内容を商品登録フォームに反映しました");
+    addToast("info", "商品候補の内容を商品登録フォームに反映しました");
     setIsProductModalOpen(true);
+  }
+
+  async function updateCandidateStatus(candidate: ProductCandidate, candidateStatus: ProductCandidateStatus) {
+    try {
+      const updatedCandidate = await api.updateProductCandidate(candidate.id, { candidate_status: candidateStatus });
+      setProductCandidates((current) => (
+        current.map((item) => (item.id === updatedCandidate.id ? updatedCandidate : item))
+      ));
+      setEvidenceCandidate((current) => (current?.id === updatedCandidate.id ? updatedCandidate : current));
+      addToast("success", `商品候補を「${candidateStatusLabel(candidateStatus)}」に更新しました`);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "商品候補の状態更新に失敗しました";
+      addToast("error", errorMessage);
+    }
   }
 
   function openProductCreateModal() {
@@ -968,8 +1002,6 @@ export default function App() {
   }
 
   async function createManualNotification(product: Product) {
-    setError("");
-    setMessage("");
     try {
       const result = await api.createNotificationLog({
         product_id: product.id,
@@ -979,7 +1011,6 @@ export default function App() {
         sent_at: null,
       });
       const notificationMessage = result.duplicated ? "同じ通知ログがすでに存在します" : "通知ログを作成しました";
-      setMessage(notificationMessage);
       if (result.duplicated) {
         setHighlightedNotificationLogId(result.notification_log.id);
         window.setTimeout(() => {
@@ -994,13 +1025,11 @@ export default function App() {
       setActiveTab("notifications");
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "通知ログの作成に失敗しました";
-      setError(errorMessage);
       addToast("error", errorMessage);
     }
   }
 
   async function refreshAll() {
-    setMessage("");
     await loadAll();
   }
 
@@ -1227,9 +1256,12 @@ export default function App() {
                       </div>
                     </div>
                     <SimpleTable
-                      headers={["商品名候補", "価格", "発売日", "販売元", "利益期待度", "検出理由", "キーワード", "情報元", "操作"]}
+                      headers={["商品名候補", "状態", "価格", "発売日", "販売元", "利益期待度", "検出理由", "キーワード", "情報元", "操作"]}
                       rows={group.candidates.map((candidate) => [
                         <strong key={candidate.id}>{candidate.product_name}</strong>,
+                        <span className={`candidate-status-badge candidate-status-${candidate.candidate_status}`} key={candidate.id}>
+                          {candidateStatusLabel(candidate.candidate_status)}
+                        </span>,
                         formatPriceYen(candidate.price),
                         formatDate(candidate.release_date),
                         candidate.sales_store ?? "-",
@@ -1239,6 +1271,16 @@ export default function App() {
                         <a className="source-link-button" href={candidate.source_url} target="_blank" rel="noreferrer" key={candidate.id}><ExternalLink size={14} /> 開く</a>,
                         <div className="actions candidate-actions" key={candidate.id}>
                           <button className="secondary-button" onClick={() => setEvidenceCandidate(candidate)}><Search size={16} /> 根拠を見る</button>
+                          {candidateStatusActions.map((action) => (
+                            <button
+                              className="secondary-button"
+                              disabled={candidate.candidate_status === action.status}
+                              key={action.status}
+                              onClick={() => void updateCandidateStatus(candidate, action.status)}
+                            >
+                              {action.label}
+                            </button>
+                          ))}
                           <button className="primary-button" onClick={() => prefillProductFromCandidate(candidate)}><SendToBack size={16} /> 商品登録へ</button>
                         </div>,
                       ])}
@@ -1474,6 +1516,10 @@ export default function App() {
                       <span>利益期待度</span>
                       <strong>{evidenceCandidate.profit_expectation} / {expectationLabel(evidenceCandidate.profit_expectation)}</strong>
                     </div>
+                    <div>
+                      <span>候補状態</span>
+                      <strong>{candidateStatusLabel(evidenceCandidate.candidate_status)}</strong>
+                    </div>
                   </div>
                   <div className="evidence-raw">
                     <span>raw_text</span>
@@ -1483,6 +1529,16 @@ export default function App() {
               );
             })()}
             <div className="modal-actions">
+              {candidateStatusActions.map((action) => (
+                <button
+                  className="secondary-button"
+                  disabled={evidenceCandidate.candidate_status === action.status}
+                  key={action.status}
+                  onClick={() => void updateCandidateStatus(evidenceCandidate, action.status)}
+                >
+                  {action.label}
+                </button>
+              ))}
               <button className="secondary-button" onClick={() => setEvidenceCandidate(null)}>閉じる</button>
               <button className="primary-button" onClick={() => { prefillProductFromCandidate(evidenceCandidate); setEvidenceCandidate(null); }}><SendToBack size={16} /> 商品登録へ</button>
             </div>

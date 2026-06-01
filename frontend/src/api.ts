@@ -7,6 +7,7 @@ import type {
   NotificationLogInput,
   Product,
   ProductCandidate,
+  ProductCandidateStatus,
   ProductInput,
   ScrapingJob,
   ScrapingJobCreateRequest,
@@ -203,6 +204,11 @@ export const api = {
   getScrapingJob: (jobId: string) => request<ScrapingJob>(`/scraping-jobs/${jobId}`),
   listScrapingJobs: () => request<ScrapingJob[]>("/scraping-jobs"),
   listProductCandidates: () => request<ProductCandidate[]>("/product-candidates"),
+  updateProductCandidate: (id: number, input: { candidate_status: ProductCandidateStatus }) =>
+    request<ProductCandidate>(`/product-candidates/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
   listNotificationLogs: () => request<NotificationLog[]>("/notification-logs"),
   createNotificationLog: (input: NotificationLogInput) =>
     request<NotificationLogCreateResponse>("/notification-logs", {

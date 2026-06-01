@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from .. import crud, schemas
@@ -24,3 +24,15 @@ def list_product_candidates(
         limit=limit,
         offset=offset,
     )
+
+
+@router.put("/{product_candidate_id}", response_model=schemas.ProductCandidateRead)
+def update_product_candidate(
+    product_candidate_id: int,
+    product_candidate: schemas.ProductCandidateUpdate,
+    db: Session = Depends(get_db),
+) -> schemas.ProductCandidateRead:
+    db_product_candidate = crud.get_product_candidate(db, product_candidate_id)
+    if db_product_candidate is None:
+        raise HTTPException(status_code=404, detail="Product candidate not found")
+    return crud.update_product_candidate(db, db_product_candidate, product_candidate)

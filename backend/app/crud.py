@@ -418,6 +418,13 @@ def get_product_candidate_by_source_url(
     return db.scalar(statement)
 
 
+def get_product_candidate(
+    db: Session,
+    product_candidate_id: int,
+) -> models.ProductCandidate | None:
+    return db.get(models.ProductCandidate, product_candidate_id)
+
+
 def create_product_candidate(
     db: Session,
     product_candidate: schemas.ProductCandidateCreate,
@@ -425,6 +432,19 @@ def create_product_candidate(
     data = product_candidate.model_dump()
     data["source_url"] = str(data["source_url"])
     db_product_candidate = models.ProductCandidate(**data)
+    db.add(db_product_candidate)
+    db.commit()
+    db.refresh(db_product_candidate)
+    return db_product_candidate
+
+
+def update_product_candidate(
+    db: Session,
+    db_product_candidate: models.ProductCandidate,
+    product_candidate: schemas.ProductCandidateUpdate,
+) -> models.ProductCandidate:
+    for field, value in product_candidate.model_dump(exclude_unset=True).items():
+        setattr(db_product_candidate, field, value)
     db.add(db_product_candidate)
     db.commit()
     db.refresh(db_product_candidate)

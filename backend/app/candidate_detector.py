@@ -104,6 +104,21 @@ PRODUCT_SIGNAL_KEYWORDS = [
     "ガシャポン",
 ]
 
+SELECTED_STATUS_PRODUCT_SIGNAL_KEYWORDS = [
+    "拡張パック",
+    "強化拡張パック",
+    "スターター",
+    "スタートデッキ",
+    "デッキ",
+    "カード",
+    "BOX",
+    "パック",
+    "グッズ",
+    "ぬいぐるみ",
+    "ガチャ",
+    "ガシャポン",
+]
+
 PRODUCT_URL_HINTS = [
     "/products/",
     "/product/",
@@ -143,8 +158,19 @@ def build_candidate_from_source_log(
         return None
 
     selected_keywords = get_keywords_for_statuses(selected_statuses)
-    if selected_keywords and not get_matched_keywords(haystack, selected_keywords):
-        return None
+    if selected_keywords:
+        selected_keyword_matches = get_matched_keywords(haystack, selected_keywords)
+        if not selected_keyword_matches:
+            return None
+        if not has_product_keyword_signal(
+            title=source_log.title,
+            raw_text=source_log.raw_text,
+            url=source_log.url,
+            source=source,
+            db_keywords=db_keywords,
+            selected_status_keywords=selected_keywords,
+        ):
+            return None
 
     matched: list[str] = []
     score = 0
@@ -293,14 +319,54 @@ def has_selected_status_signal(
     *,
     title: str,
     raw_text: str | None,
+    url: str,
+    source: models.Source,
     selected_statuses: list[str] | None,
     db_keywords: list[models.Keyword] | None = None,
 ) -> bool:
     selected_keywords = get_keywords_for_statuses(selected_statuses)
     if not selected_keywords:
-        return bool(get_db_keyword_matches(f"{title}\n{raw_text or ''}", db_keywords))
+        return has_product_opportunity_signal(
+            title=title,
+            raw_text=raw_text,
+            url=url,
+            source=source,
+            db_keywords=db_keywords,
+        )
     haystack = f"{title}\n{raw_text or ''}"
-    return bool(get_matched_keywords(haystack, selected_keywords) or get_db_keyword_matches(haystack, db_keywords))
+    return bool(
+        get_matched_keywords(haystack, selected_keywords)
+        and has_product_keyword_signal(
+            title=title,
+            raw_text=raw_text,
+            url=url,
+            source=source,
+            db_keywords=db_keywords,
+            selected_status_keywords=selected_keywords,
+        )
+    )
+
+
+def has_product_keyword_signal(
+    *,
+    title: str,
+    raw_text: str | None,
+    url: str,
+    source: models.Source,
+    db_keywords: list[models.Keyword] | None = None,
+    selected_status_keywords: list[str] | None = None,
+) -> bool:
+    haystack = f"{title}\n{raw_text or ''}"
+    status_keywords = set(selected_status_keywords or [])
+
+    for keyword in get_db_keyword_matches(haystack, db_keywords):
+        if not is_status_only_keyword(keyword.keyword, status_keywords):
+            return True
+
+    if any(keyword in haystack for keyword in SELECTED_STATUS_PRODUCT_SIGNAL_KEYWORDS if keyword not in status_keywords):
+        return True
+
+    return has_product_page_signal(title=title, raw_text=raw_text, url=url, source=source)
 
 
 def has_product_page_signal(
@@ -337,6 +403,14 @@ def get_keywords_for_statuses(selected_statuses: list[str] | None) -> list[str]:
     return sorted(set(keywords))
 
 
+def get_all_status_keywords() -> set[str]:
+    keywords: set[str] = set()
+    for status, status_keywords in STATUS_KEYWORD_GROUPS.items():
+        keywords.add(status)
+        keywords.update(status_keywords)
+    return keywords
+
+
 def get_matched_keywords(text: str, keywords: list[str]) -> list[str]:
     return [keyword for keyword in keywords if keyword and keyword in text]
 
@@ -345,6 +419,11 @@ def get_db_keyword_matches(text: str, db_keywords: list[models.Keyword] | None) 
     if not db_keywords:
         return []
     return [keyword for keyword in db_keywords if keyword.is_active and keyword.keyword and keyword.keyword in text]
+
+
+def is_status_only_keyword(keyword: str, selected_status_keywords: set[str]) -> bool:
+    status_keywords = get_all_status_keywords() | selected_status_keywords
+    return keyword in status_keywords
 
 
 def score_for_keyword_priority(priority: int) -> int:

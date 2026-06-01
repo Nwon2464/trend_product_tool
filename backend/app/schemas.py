@@ -2,6 +2,8 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
+CANDIDATE_STATUS_VALUES = {"new", "watching", "confirmed", "ignored", "purchased"}
+
 
 class ProductBase(BaseModel):
     category: str = Field(..., min_length=1, max_length=100)
@@ -274,9 +276,34 @@ class ProductCandidateBase(BaseModel):
             value = value.strip()
         return value
 
+    @field_validator("candidate_status")
+    @classmethod
+    def validate_candidate_status(cls, value: str) -> str:
+        if value not in CANDIDATE_STATUS_VALUES:
+            raise ValueError("candidate_status must be one of: new, watching, confirmed, ignored, purchased")
+        return value
+
 
 class ProductCandidateCreate(ProductCandidateBase):
     pass
+
+
+class ProductCandidateUpdate(BaseModel):
+    candidate_status: str = Field(..., min_length=1, max_length=50)
+
+    @field_validator("candidate_status", mode="before")
+    @classmethod
+    def strip_candidate_status(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            value = value.strip()
+        return value
+
+    @field_validator("candidate_status")
+    @classmethod
+    def validate_candidate_status(cls, value: str) -> str:
+        if value not in CANDIDATE_STATUS_VALUES:
+            raise ValueError("candidate_status must be one of: new, watching, confirmed, ignored, purchased")
+        return value
 
 
 class ProductCandidateRead(ProductCandidateBase):

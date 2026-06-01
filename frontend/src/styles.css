@@ -599,7 +599,7 @@ td small {
   align-items: stretch;
   display: grid;
   gap: 6px;
-  min-width: 128px;
+  min-width: 136px;
 }
 
 .candidate-actions .primary-button,
@@ -622,6 +622,41 @@ td small {
   padding: 0 10px;
   text-decoration: none;
   width: 72px;
+}
+
+.candidate-status-badge {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+
+.candidate-status-new {
+  background: #eef3f4;
+  color: #435158;
+}
+
+.candidate-status-watching {
+  background: #e8f2fb;
+  color: #285f8c;
+}
+
+.candidate-status-confirmed {
+  background: #e8f7ef;
+  color: #168347;
+}
+
+.candidate-status-ignored {
+  background: #f0ece7;
+  color: #6a5747;
+}
+
+.candidate-status-purchased {
+  background: #fff1cc;
+  color: #8a5b00;
 }
 
 .empty-state {
