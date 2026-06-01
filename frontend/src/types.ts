@@ -171,3 +171,9 @@ export type NotificationLogInput = {
   status: string;
   sent_at: string | null;
 };
+
+export type NotificationLogCreateResponse = {
+  duplicated: boolean;
+  message: string;
+  notification_log: NotificationLog;
+};

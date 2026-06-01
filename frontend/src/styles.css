@@ -126,32 +126,141 @@ main {
 .section-heading {
   align-items: center;
   display: flex;
+  gap: 14px;
   justify-content: space-between;
   margin-bottom: 16px;
 }
 
-.section-heading span {
+.section-title-group {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.section-heading span,
+.count-badge {
   color: #63737a;
   font-size: 13px;
 }
 
-.notice {
+.count-badge {
+  background: #eef5f5;
+  border: 1px solid #c9dcde;
+  border-radius: 999px;
+  color: #0b5d63;
+  font-weight: 700;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+.heading-actions {
   align-items: center;
-  border-radius: 6px;
   display: flex;
-  gap: 8px;
-  margin: 14px 24px 0;
-  padding: 10px 12px;
+  gap: 10px;
 }
 
-.notice.success {
+.section-description {
+  color: #53646b;
+  font-size: 13px;
+  line-height: 1.7;
+  margin: -4px 0 16px;
+  max-width: 760px;
+}
+
+.toast-container {
+  bottom: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+  position: fixed;
+  right: 28px;
+  width: min(760px, calc(100vw - 40px));
+  z-index: 9999;
+}
+
+.toast {
+  align-items: start;
+  background: #ffffff;
+  border: 1px solid #dfe8ea;
+  border-left: 4px solid #5f7680;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(23, 32, 38, 0.18);
+  color: #172026;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 112px minmax(0, 1fr);
+  min-height: 76px;
+  padding: 22px 24px;
+  pointer-events: auto;
+}
+
+.toast p {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.55;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.toast-type {
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  padding: 7px 12px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.toast-success {
   background: #e8f7ef;
-  color: #14643a;
+  border-color: #9fd7b8;
+  border-left-color: #168347;
+  color: #0d4f2d;
 }
 
-.notice.error {
-  background: #fdecec;
-  color: #9a2c2c;
+.toast-success .toast-type {
+  background: #168347;
+  color: #ffffff;
+}
+
+.toast-info {
+  background: #e8f2fb;
+  border-color: #9ec7e8;
+  border-left-color: #2f6f9f;
+  color: #234a69;
+}
+
+.toast-info .toast-type {
+  background: #2f6f9f;
+  color: #ffffff;
+}
+
+.toast-warning {
+  background: #fff3c4;
+  border-color: #e5bd4d;
+  border-left-color: #b87900;
+  color: #6f4800;
+}
+
+.toast-warning .toast-type {
+  background: #b87900;
+  color: #ffffff;
+}
+
+.toast-error {
+  background: #fde8e8;
+  border-color: #efa3a3;
+  border-left-color: #b72f2f;
+  color: #7f1d1d;
+}
+
+.toast-error .toast-type {
+  background: #b72f2f;
+  color: #ffffff;
 }
 
 .filters,
@@ -342,6 +451,28 @@ td {
 
 tbody tr:hover {
   background: #f8fbfb;
+}
+
+tbody tr.duplicate-highlight-row {
+  background: #fff3bf;
+  box-shadow: inset 5px 0 0 #d99000;
+}
+
+tbody tr.duplicate-highlight-row:hover {
+  background: #ffe8a3;
+}
+
+.notification-log-id {
+  color: inherit;
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  min-width: 32px;
+}
+
+.duplicate-highlight-row .notification-log-id {
+  color: #7c4a00;
+  font-weight: 900;
 }
 
 td small {
@@ -539,6 +670,56 @@ td small {
   max-width: min(1320px, calc(100vw - 40px));
 }
 
+.product-modal {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(23, 32, 38, 0.24);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: min(820px, calc(100vh - 40px));
+  max-width: min(960px, calc(100vw - 40px));
+  overflow: hidden;
+  padding: 16px;
+  width: 100%;
+}
+
+.product-modal-content {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.source-modal,
+.keyword-modal {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(23, 32, 38, 0.24);
+  max-height: min(720px, calc(100vh - 40px));
+  max-width: min(760px, calc(100vw - 40px));
+  overflow: auto;
+  padding: 16px;
+  width: 100%;
+}
+
+.source-modal-form,
+.keyword-modal-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+
+.checkbox-label {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.checkbox-label input {
+  min-height: auto;
+  width: auto;
+}
+
 .confirm-modal {
   background: #ffffff;
   border-radius: 8px;
@@ -581,7 +762,7 @@ td small {
 .scraping-modal-layout {
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 500px);
   height: calc(100% - 42px);
   min-height: 0;
 }
@@ -658,7 +839,8 @@ td small {
   gap: 4px;
   align-content: start;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 12px;
 }
 
@@ -680,11 +862,13 @@ td small {
 }
 
 .terminal-line {
-  align-items: start;
   display: grid;
+  grid-template-columns: 64px 72px minmax(0, 1fr);
   gap: 8px;
-  grid-template-columns: 64px 58px minmax(0, 1fr);
-  min-height: 20px;
+  align-items: start;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 2px 0;
 }
 
 .terminal-order-marker {
@@ -707,24 +891,37 @@ td small {
   padding-top: 4px;
 }
 
-.terminal-line span,
-.terminal-line strong,
-.terminal-line p {
+.terminal-time,
+.terminal-level,
+.terminal-message {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
-.terminal-line span {
+.terminal-time {
   color: #71858d;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.terminal-line strong {
+.terminal-level {
   color: #d9edf0;
+  font-size: 10px;
+  min-width: 56px;
+  white-space: nowrap;
+}
+
+.terminal-message {
+  color: #d9edf0;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .terminal-line p {
-  color: #d9edf0;
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -739,6 +936,7 @@ td small {
 
 .terminal-line-fetch strong,
 .terminal-line-parse strong,
+.terminal-line-detail strong,
 .terminal-line-keyword strong,
 .terminal-line-candidate strong {
   color: #b9a7ff;
@@ -1041,7 +1239,8 @@ td small {
   .filters,
   .product-form,
   .inline-form,
-  .source-form {
+  .source-form,
+  .keyword-modal-form {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -1063,6 +1262,7 @@ td small {
   .product-form,
   .inline-form,
   .source-form,
+  .keyword-modal-form,
   .prep-grid {
     grid-template-columns: 1fr;
   }

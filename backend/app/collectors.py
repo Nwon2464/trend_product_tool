@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html.parser import HTMLParser
+from typing import Callable
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 from urllib.robotparser import RobotFileParser
@@ -45,6 +46,20 @@ class CollectedItem:
     title: str
     url: str
     raw_text: str | None
+
+
+ProgressCallback = Callable[[str, str, str, dict | None], None]
+
+
+def emit_progress(
+    progress_callback: ProgressCallback | None,
+    event_type: str,
+    level: str,
+    message: str,
+    payload: dict | None = None,
+) -> None:
+    if progress_callback is not None:
+        progress_callback(event_type, level, message, payload)
 
 
 def normalize_text(value: str | None) -> str:
@@ -171,8 +186,16 @@ def run_collector(
     respect_robots: bool,
     minimum_interval_seconds: int,
     selected_statuses: list[str] | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> schemas.CollectorRunResponse:
     now = datetime.now(timezone.utc)
+    emit_progress(
+        progress_callback,
+        "check",
+        "info",
+        f"Collector started: {source.source_name}",
+        {"source_id": source.id, "source_url": source.url},
+    )
     collection_run = crud.create_collection_run(
         db,
         source_id=source.id,
@@ -180,10 +203,23 @@ def run_collector(
         selected_statuses=json.dumps(selected_statuses or [], ensure_ascii=False),
         started_at=now,
     )
+    emit_progress(progress_callback, "check", "info", "Checking minimum interval")
     latest_log = crud.get_latest_source_log(db, source.id)
     if latest_log is not None and minimum_interval_seconds > 0:
         elapsed = (now.replace(tzinfo=None) - latest_log.detected_at.replace(tzinfo=None)).total_seconds()
         if elapsed < minimum_interval_seconds:
+            next_retry_seconds = max(0, int(minimum_interval_seconds - elapsed))
+            emit_progress(
+                progress_callback,
+                "skip",
+                "warn",
+                f"直近で取得済みのためスキップ。次回取得まで {next_retry_seconds}秒",
+                {
+                    "reason": "minimum_interval",
+                    "details": "Recently collected source",
+                    "next_retry_seconds": next_retry_seconds,
+                },
+            )
             crud.finish_collection_run(
                 db,
                 collection_run,
@@ -198,11 +234,23 @@ def run_collector(
                 created_count=0,
                 skipped_count=0,
                 skipped_reason="minimum_interval",
-                skipped_details=["minimum_interval"],
+                skipped_details=[f"minimum_interval:{next_retry_seconds}"],
                 logs=[],
             )
 
+    if respect_robots:
+        emit_progress(progress_callback, "check", "info", "Checking robots.txt")
     if respect_robots and not is_allowed_by_robots(source.url):
+        emit_progress(
+            progress_callback,
+            "skip",
+            "warn",
+            "robots.txt によりスキップ",
+            {
+                "reason": "robots_disallow",
+                "details": "robots.txt disallowed this URL",
+            },
+        )
         crud.finish_collection_run(
             db,
             collection_run,
@@ -219,20 +267,43 @@ def run_collector(
             skipped_reason="robots_disallow",
             skipped_details=["robots_disallow"],
             logs=[],
-        )
+    )
 
     try:
+        emit_progress(progress_callback, "fetch", "info", f"HTML取得開始: {source.url}", {"url": source.url})
         content, content_type = fetch_url(source.url)
+        emit_progress(
+            progress_callback,
+            "fetch",
+            "success",
+            "HTML取得完了",
+            {"content_type": content_type, "bytes": len(content)},
+        )
+        emit_progress(progress_callback, "parse", "info", "本文解析開始")
         parsed_items = parse_content(content, content_type, source.url)
+        emit_progress(progress_callback, "parse", "success", "本文解析完了", {"items": len(parsed_items)})
         items = dedupe_collected_items(parsed_items)
         if is_html_content(content_type, source.url):
+            emit_progress(progress_callback, "detail_fetch", "info", "詳細ページ取得開始", {"items": len(items)})
             items = list_to_detail_items(
                 items,
                 source_url=source.url,
                 respect_robots=respect_robots,
                 max_detail_fetches=max(MAX_DETAIL_FETCHES, max_items * 3),
+                progress_callback=progress_callback,
             )
+            emit_progress(progress_callback, "detail_fetch", "success", "詳細ページ取得完了", {"items": len(items)})
         if not items:
+            emit_progress(
+                progress_callback,
+                "skip",
+                "warn",
+                "対象候補なし",
+                {
+                    "reason": "no_usable_items",
+                    "details": "No product opportunity signal detected",
+                },
+            )
             crud.finish_collection_run(
                 db,
                 collection_run,
@@ -255,6 +326,7 @@ def run_collector(
         created_candidates: list[models.ProductCandidate] = []
         skipped_count = 0
         skipped_details: list[str] = []
+        active_keywords = crud.list_active_keywords(db)
         for item in items:
             if len(created_logs) >= max_items or len(created_candidates) >= max_items:
                 break
@@ -263,6 +335,7 @@ def run_collector(
                     title=item.title,
                     raw_text=item.raw_text,
                     selected_statuses=selected_statuses,
+                    db_keywords=active_keywords,
                 )
             else:
                 has_signal = candidate_detector.has_product_opportunity_signal(
@@ -270,18 +343,48 @@ def run_collector(
                     raw_text=item.raw_text,
                     url=item.url,
                     source=source,
+                    db_keywords=active_keywords,
                 )
             if not has_signal:
                 skipped_count += 1
                 skipped_details.append(f"not_selected_opportunity: {item.url}")
                 continue
+            emit_progress(
+                progress_callback,
+                "keyword",
+                "info",
+                f"商品候補シグナル検出: {item.title}",
+                {"url": item.url, "title": item.title},
+            )
             if crud.get_source_log_by_url(db, source_id=source.id, url=item.url) is not None:
                 skipped_count += 1
                 skipped_details.append(f"duplicate_url: {item.url}")
+                emit_progress(
+                    progress_callback,
+                    "skip",
+                    "warn",
+                    "重複URLのためスキップ",
+                    {
+                        "reason": "duplicate_url",
+                        "details": "Already collected URL",
+                        "url": item.url,
+                    },
+                )
                 continue
             if crud.get_product_candidate_by_source_url(db, item.url) is not None:
                 skipped_count += 1
                 skipped_details.append(f"duplicate_candidate_url: {item.url}")
+                emit_progress(
+                    progress_callback,
+                    "skip",
+                    "warn",
+                    "重複URLのためスキップ",
+                    {
+                        "reason": "duplicate_url",
+                        "details": "Already collected candidate URL",
+                        "url": item.url,
+                    },
+                )
                 continue
 
             created_log = crud.create_source_log(
@@ -295,13 +398,29 @@ def run_collector(
                 ),
             )
             created_logs.append(created_log)
+            emit_progress(
+                progress_callback,
+                "candidate",
+                "info",
+                "source_log を作成しました",
+                {"source_log_id": created_log.id, "url": created_log.url},
+            )
             candidate = candidate_detector.build_candidate_from_source_log(
                 source=source,
                 source_log=created_log,
                 selected_statuses=selected_statuses,
+                db_keywords=active_keywords,
             )
             if candidate and crud.get_product_candidate_by_source_url(db, candidate.source_url) is None:
-                created_candidates.append(crud.create_product_candidate(db, candidate))
+                created_candidate = crud.create_product_candidate(db, candidate)
+                created_candidates.append(created_candidate)
+                emit_progress(
+                    progress_callback,
+                    "candidate",
+                    "success",
+                    "商品候補を作成しました",
+                    {"candidate_id": created_candidate.id, "source_log_id": created_log.id},
+                )
 
         crud.finish_collection_run(
             db,
@@ -310,6 +429,17 @@ def run_collector(
             finished_at=datetime.now(timezone.utc),
             created_count=len(created_logs),
             skipped_count=skipped_count,
+        )
+        emit_progress(
+            progress_callback,
+            "source_done",
+            "success",
+            "Source completed",
+            {
+                "created_logs_count": len(created_logs),
+                "created_candidates_count": len(created_candidates),
+                "skipped_count": skipped_count,
+            },
         )
         return schemas.CollectorRunResponse(
             collection_run_id=collection_run.id,
@@ -322,6 +452,12 @@ def run_collector(
             candidates=created_candidates,
         )
     except Exception as exc:
+        emit_progress(
+            progress_callback,
+            "error",
+            "error",
+            f"Collector error: {exc}",
+        )
         crud.finish_collection_run(
             db,
             collection_run,
@@ -350,6 +486,7 @@ def list_to_detail_items(
     source_url: str,
     respect_robots: bool,
     max_detail_fetches: int,
+    progress_callback: ProgressCallback | None = None,
 ) -> list[CollectedItem]:
     detail_items: list[CollectedItem] = []
     for item in items:
@@ -358,9 +495,22 @@ def list_to_detail_items(
         if not is_detail_link_candidate(item, source_url):
             continue
         if respect_robots and not is_allowed_by_robots(item.url):
+            emit_progress(
+                progress_callback,
+                "skip",
+                "warn",
+                "robots.txt によりスキップ",
+                {
+                    "reason": "robots_disallow",
+                    "details": "robots.txt disallowed detail URL",
+                    "url": item.url,
+                },
+            )
             continue
+        emit_progress(progress_callback, "detail_fetch", "info", f"詳細ページ取得開始: {item.url}", {"url": item.url})
         detail_item = fetch_detail_item(item)
         if detail_item:
+            emit_progress(progress_callback, "detail_fetch", "success", f"詳細ページ取得完了: {item.url}", {"url": item.url})
             detail_items.append(detail_item)
     return detail_items or items
 

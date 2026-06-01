@@ -166,22 +166,22 @@ def run_scraping_job(
                     message=f"{index}/{len(source_ids)} {source.source_name}",
                     source=source,
                 )
-                append_job_event(
-                    db,
-                    job,
-                    event_type="fetch",
-                    level="info",
-                    message="HTML取得開始",
-                    source=source,
-                )
-                append_job_event(
-                    db,
-                    job,
-                    event_type="parse",
-                    level="info",
-                    message="本文解析中",
-                    source=source,
-                )
+
+                def progress_callback(
+                    event_type: str,
+                    level: str,
+                    message: str,
+                    payload: dict | None = None,
+                ) -> None:
+                    append_job_event(
+                        db,
+                        job,
+                        event_type=event_type,
+                        level=level,
+                        message=message,
+                        source=source,
+                        payload=payload,
+                    )
 
                 try:
                     result = collectors.run_collector(
@@ -191,6 +191,7 @@ def run_scraping_job(
                         respect_robots=respect_robots,
                         minimum_interval_seconds=minimum_interval_seconds,
                         selected_statuses=selected_statuses or None,
+                        progress_callback=progress_callback,
                     )
                 except Exception as exc:
                     job.failed_sources += 1
@@ -209,15 +210,6 @@ def run_scraping_job(
                 job.created_candidates_count += len(result.candidates)
                 if result.skipped_reason:
                     job.skipped_sources += 1
-                    append_job_event(
-                        db,
-                        job,
-                        event_type="skip",
-                        level="warn",
-                        message=f"Skipped: {result.skipped_reason}",
-                        source=source,
-                        payload={"reason": result.skipped_reason, "details": result.skipped_details},
-                    )
                 else:
                     job.completed_sources += 1
                     if result.skipped_count > 0:
@@ -230,23 +222,6 @@ def run_scraping_job(
                             source=source,
                             payload={"details": result.skipped_details},
                         )
-                    append_job_event(
-                        db,
-                        job,
-                        event_type="candidate",
-                        level="success" if result.candidates else "info",
-                        message=f"商品候補 {len(result.candidates)}件作成",
-                        source=source,
-                        payload={"created_logs_count": result.created_count, "created_candidates_count": len(result.candidates)},
-                    )
-                    append_job_event(
-                        db,
-                        job,
-                        event_type="source_done",
-                        level="success",
-                        message=f"{index}/{len(source_ids)} completed",
-                        source=source,
-                    )
                 crud.save_scraping_job(db, job)
 
             job.status = "completed"

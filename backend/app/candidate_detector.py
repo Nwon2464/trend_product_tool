@@ -134,6 +134,7 @@ def build_candidate_from_source_log(
     source: models.Source,
     source_log: models.SourceLog,
     selected_statuses: list[str] | None = None,
+    db_keywords: list[models.Keyword] | None = None,
 ) -> schemas.ProductCandidateCreate | None:
     haystack = f"{source_log.title}\n{source_log.raw_text or ''}"
     if has_excluded_keyword(haystack):
@@ -148,12 +149,21 @@ def build_candidate_from_source_log(
     matched: list[str] = []
     score = 0
     reasons: list[str] = []
+    db_keyword_matches = get_db_keyword_matches(haystack, db_keywords)
     for label, points, keywords in DETECTION_RULES:
         rule_matches = [keyword for keyword in keywords if keyword in haystack]
         if rule_matches:
             matched.extend(rule_matches)
             score += points
             reasons.append(f"{label}: {', '.join(rule_matches)}")
+
+    for keyword in db_keyword_matches:
+        matched.append(keyword.keyword)
+        keyword_score = score_for_keyword_priority(keyword.priority)
+        score += keyword_score
+        reasons.append(f"登録キーワード「{keyword.keyword}」を検出")
+        reasons.append(f"優先度{keyword.priority}のキーワードを検出")
+        reasons.append(f"カテゴリ「{keyword.category}」の登録キーワードに一致")
 
     if not matched and has_product_page_signal(
         title=source_log.title,
@@ -172,6 +182,7 @@ def build_candidate_from_source_log(
     release_date = extract_release_date(haystack)
     sales_store = source.source_name
     product_name = clean_product_name(source_log.title)
+    candidate_category = db_keyword_matches[0].category if db_keyword_matches else source.target_category
 
     if price is not None:
         score += 6
@@ -201,7 +212,7 @@ def build_candidate_from_source_log(
 
     return schemas.ProductCandidateCreate(
         source_log_id=source_log.id,
-        category=source.target_category,
+        category=candidate_category,
         product_name=product_name,
         price=price,
         release_date=release_date,
@@ -263,12 +274,16 @@ def has_product_opportunity_signal(
     raw_text: str | None,
     url: str,
     source: models.Source,
+    db_keywords: list[models.Keyword] | None = None,
 ) -> bool:
     haystack = f"{title}\n{raw_text or ''}"
     if has_excluded_keyword(haystack) or is_noisy_title(title):
         return False
 
     if any(keyword in haystack for keyword in get_detection_keywords()):
+        return True
+
+    if get_db_keyword_matches(haystack, db_keywords):
         return True
 
     return has_product_page_signal(title=title, raw_text=raw_text, url=url, source=source)
@@ -279,12 +294,13 @@ def has_selected_status_signal(
     title: str,
     raw_text: str | None,
     selected_statuses: list[str] | None,
+    db_keywords: list[models.Keyword] | None = None,
 ) -> bool:
     selected_keywords = get_keywords_for_statuses(selected_statuses)
     if not selected_keywords:
-        return False
+        return bool(get_db_keyword_matches(f"{title}\n{raw_text or ''}", db_keywords))
     haystack = f"{title}\n{raw_text or ''}"
-    return bool(get_matched_keywords(haystack, selected_keywords))
+    return bool(get_matched_keywords(haystack, selected_keywords) or get_db_keyword_matches(haystack, db_keywords))
 
 
 def has_product_page_signal(
@@ -323,6 +339,20 @@ def get_keywords_for_statuses(selected_statuses: list[str] | None) -> list[str]:
 
 def get_matched_keywords(text: str, keywords: list[str]) -> list[str]:
     return [keyword for keyword in keywords if keyword and keyword in text]
+
+
+def get_db_keyword_matches(text: str, db_keywords: list[models.Keyword] | None) -> list[models.Keyword]:
+    if not db_keywords:
+        return []
+    return [keyword for keyword in db_keywords if keyword.is_active and keyword.keyword and keyword.keyword in text]
+
+
+def score_for_keyword_priority(priority: int) -> int:
+    if priority <= 1:
+        return 15
+    if priority == 2:
+        return 10
+    return 5
 
 
 def clean_product_name(title: str) -> str:

@@ -326,3 +326,9 @@ class NotificationLogRead(NotificationLogBase):
 
     id: int
     created_at: datetime
+
+
+class NotificationLogCreateResponse(BaseModel):
+    duplicated: bool
+    message: str
+    notification_log: NotificationLogRead

@@ -103,6 +103,10 @@ def list_keywords(
     return list(db.scalars(statement))
 
 
+def list_active_keywords(db: Session) -> list[models.Keyword]:
+    return list_keywords(db, is_active=True)
+
+
 def get_keyword(db: Session, keyword_id: int) -> models.Keyword | None:
     return db.get(models.Keyword, keyword_id)
 
@@ -456,6 +460,21 @@ def get_notification_log(
     notification_log_id: int,
 ) -> models.NotificationLog | None:
     return db.get(models.NotificationLog, notification_log_id)
+
+
+def get_duplicate_notification_log(
+    db: Session,
+    notification_log: schemas.NotificationLogCreate,
+) -> models.NotificationLog | None:
+    statement = (
+        select(models.NotificationLog)
+        .where(models.NotificationLog.product_id == notification_log.product_id)
+        .where(models.NotificationLog.message == notification_log.message)
+        .where(models.NotificationLog.channel == notification_log.channel)
+        .order_by(models.NotificationLog.created_at.desc())
+        .limit(1)
+    )
+    return db.scalars(statement).first()
 
 
 def create_notification_log(

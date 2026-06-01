@@ -3,6 +3,7 @@ import type {
   Keyword,
   KeywordInput,
   NotificationLog,
+  NotificationLogCreateResponse,
   NotificationLogInput,
   Product,
   ProductCandidate,
@@ -204,7 +205,7 @@ export const api = {
   listProductCandidates: () => request<ProductCandidate[]>("/product-candidates"),
   listNotificationLogs: () => request<NotificationLog[]>("/notification-logs"),
   createNotificationLog: (input: NotificationLogInput) =>
-    request<NotificationLog>("/notification-logs", {
+    request<NotificationLogCreateResponse>("/notification-logs", {
       method: "POST",
       body: JSON.stringify(input),
     }),

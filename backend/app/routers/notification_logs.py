@@ -28,17 +28,29 @@ def list_notification_logs(
 
 @router.post(
     "",
-    response_model=schemas.NotificationLogRead,
+    response_model=schemas.NotificationLogCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def create_notification_log(
     notification_log: schemas.NotificationLogCreate,
     db: Session = Depends(get_db),
-) -> schemas.NotificationLogRead:
+) -> schemas.NotificationLogCreateResponse:
     db_product = crud.get_product(db, notification_log.product_id)
     if db_product is None:
         raise HTTPException(status_code=404, detail="Product not found")
-    return crud.create_notification_log(db, notification_log)
+    duplicate_log = crud.get_duplicate_notification_log(db, notification_log)
+    if duplicate_log is not None:
+        return schemas.NotificationLogCreateResponse(
+            duplicated=True,
+            message="同じ通知ログがすでに存在します",
+            notification_log=duplicate_log,
+        )
+    created_log = crud.create_notification_log(db, notification_log)
+    return schemas.NotificationLogCreateResponse(
+        duplicated=False,
+        message="通知ログを作成しました",
+        notification_log=created_log,
+    )
 
 
 @router.get("/{notification_log_id}", response_model=schemas.NotificationLogRead)

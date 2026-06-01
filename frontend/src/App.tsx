@@ -1,7 +1,6 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownUp,
-  CheckCircle2,
   Download,
   ExternalLink,
   Megaphone,
@@ -53,12 +52,23 @@ type ScrapingTargetProgress = {
   message: string;
   cooldownUntil?: number;
 };
-type TerminalLogLevel = "info" | "start" | "fetch" | "parse" | "keyword" | "candidate" | "success" | "warn" | "error";
+type TerminalLogLevel = "info" | "start" | "fetch" | "parse" | "detail" | "keyword" | "candidate" | "success" | "warn" | "error";
 type TerminalLine = {
   id: string;
   time: string;
   level: TerminalLogLevel;
   message: string;
+};
+type ToastType = "success" | "info" | "warning" | "error";
+type ToastMessage = {
+  id: string;
+  type: ToastType;
+  message: string;
+  createdAt: number;
+};
+type TableRow = Array<ReactNode> | {
+  cells: Array<ReactNode>;
+  className?: string;
 };
 type SourceLogFilter = "すべて" | "候補検出" | "登録済み" | "未登録";
 type SourceLogStatus = "候補検出" | "登録済み" | "未登録";
@@ -95,7 +105,7 @@ const emptySource: SourceInput = {
   memo: "",
 };
 
-type Tab = "products" | "collection" | "add-product" | "source-management" | "keywords" | "notifications";
+type Tab = "products" | "collection" | "source-management" | "keywords" | "notifications";
 
 function toProductInput(product: Product): ProductInput {
   return {
@@ -153,6 +163,31 @@ function formatTerminalTime(date = new Date()) {
   });
 }
 
+function getPayloadString(payload: Record<string, unknown> | null, key: string) {
+  const value = payload?.[key];
+  return typeof value === "string" ? value : null;
+}
+
+function getPayloadNumber(payload: Record<string, unknown> | null, key: string) {
+  const value = payload?.[key];
+  return typeof value === "number" ? value : null;
+}
+
+function messageForSkipEvent(event: ScrapingJobEvent) {
+  const reason = getPayloadString(event.payload, "reason");
+  const details = getPayloadString(event.payload, "details");
+  if (reason === "minimum_interval") {
+    const seconds = getPayloadNumber(event.payload, "next_retry_seconds");
+    return seconds === null
+      ? "直近で取得済みのためスキップ"
+      : `直近で取得済みのためスキップ。次回取得まで ${formatDuration(seconds)}`;
+  }
+  if (reason === "robots_disallow") return "robots.txt によりスキップ";
+  if (reason === "duplicate_url") return "重複URLのためスキップ";
+  if (reason === "no_usable_items") return "対象候補なし";
+  return details ?? event.message;
+}
+
 function expectationLabel(score: number) {
   if (score >= 80) return "高期待";
   if (score >= 60) return "注目";
@@ -202,6 +237,20 @@ function getSourceLogStatus(
   return "未登録";
 }
 
+function ToastContainer({ toasts }: { toasts: ToastMessage[] }) {
+  if (toasts.length === 0) return null;
+  return (
+    <div className="toast-container" aria-live="polite" aria-atomic="false">
+      {toasts.map((toast) => (
+        <div className={`toast toast-${toast.type}`} key={toast.id}>
+          <span className="toast-type">{toast.type}</span>
+          <p>{toast.message}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("collection");
   const [products, setProducts] = useState<Product[]>([]);
@@ -222,9 +271,12 @@ export default function App() {
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [keywordForm, setKeywordForm] = useState<KeywordInput>(emptyKeyword);
   const [sourceForm, setSourceForm] = useState<SourceInput>(emptySource);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [, setMessage] = useState("");
+  const [, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
+  const [isKeywordModalOpen, setIsKeywordModalOpen] = useState(false);
   const [isScrapingModalOpen, setIsScrapingModalOpen] = useState(false);
   const [isDeleteLogsModalOpen, setIsDeleteLogsModalOpen] = useState(false);
   const [evidenceCandidate, setEvidenceCandidate] = useState<ProductCandidate | null>(null);
@@ -239,6 +291,8 @@ export default function App() {
   const [sourceLogFilter, setSourceLogFilter] = useState<SourceLogFilter>("すべて");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([]);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [highlightedNotificationLogId, setHighlightedNotificationLogId] = useState<number | null>(null);
   const [activeScrapingJob, setActiveScrapingJob] = useState<ScrapingJob | null>(null);
   const terminalBodyRef = useRef<HTMLDivElement | null>(null);
   const terminalLineSeq = useRef(0);
@@ -308,8 +362,13 @@ export default function App() {
   ), [candidatesBySourceLogId, filteredSourceLogs, productSourceUrls]);
 
   const scrapingUrls = useMemo(() => {
+    const sourceNameQuery = scrapingPrep.sourceName.trim().toLowerCase();
     return sortSourcesByNewest(sources)
-      .filter((source) => scrapingPrep.category === "すべて" || source.target_category === scrapingPrep.category)
+      .filter((source) => {
+        const matchesCategory = scrapingPrep.category === "すべて" || source.target_category === scrapingPrep.category;
+        const matchesSourceName = sourceNameQuery === "" || source.source_name.toLowerCase().includes(sourceNameQuery);
+        return matchesCategory && matchesSourceName;
+      })
       .map((source) => ({
         key: `registered-${source.id}`,
         id: source.id,
@@ -318,7 +377,7 @@ export default function App() {
         category: source.target_category,
         kind: "登録済み",
       }));
-  }, [scrapingPrep.category, sources]);
+  }, [scrapingPrep.category, scrapingPrep.sourceName, sources]);
 
   const selectedScrapingTargets = useMemo(() => (
     scrapingUrls.filter((source) => selectedScrapingKeys.includes(source.key))
@@ -366,12 +425,21 @@ export default function App() {
     ]);
   }, []);
 
+  const addToast = useCallback((type: ToastType, message: string) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setToasts((current) => [{ id, type, message, createdAt: Date.now() }, ...current]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 4500);
+  }, []);
+
   const appendScrapingJobEvent = useCallback((event: ScrapingJobEvent) => {
     const levelByEventType: Record<string, TerminalLogLevel> = {
       start: "start",
       source_start: "start",
       fetch: "fetch",
       parse: "parse",
+      detail_fetch: "detail",
       keyword: "keyword",
       candidate: "candidate",
       skip: "warn",
@@ -441,7 +509,7 @@ export default function App() {
   }, [loadAll]);
 
   useEffect(() => {
-    if (!isScrapingModalOpen && !isDeleteLogsModalOpen && evidenceCandidate === null) {
+    if (!isProductModalOpen && !isSourceModalOpen && !isKeywordModalOpen && !isScrapingModalOpen && !isDeleteLogsModalOpen && evidenceCandidate === null) {
       return;
     }
     const previousOverflow = document.body.style.overflow;
@@ -449,7 +517,7 @@ export default function App() {
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [evidenceCandidate, isDeleteLogsModalOpen, isScrapingModalOpen]);
+  }, [evidenceCandidate, isDeleteLogsModalOpen, isKeywordModalOpen, isProductModalOpen, isScrapingModalOpen, isSourceModalOpen]);
 
   useEffect(() => {
     if (!isScrapingModalOpen) return;
@@ -500,6 +568,7 @@ export default function App() {
       }
       setProductForm(emptyProduct);
       setEditingProductId(null);
+      setIsProductModalOpen(false);
       setActiveTab("products");
       await loadAll();
     } catch (err) {
@@ -516,13 +585,26 @@ export default function App() {
   async function submitKeyword(event: FormEvent) {
     event.preventDefault();
     setError("");
+    setMessage("");
     try {
       await api.createKeyword(keywordForm);
       setKeywordForm(emptyKeyword);
+      setIsKeywordModalOpen(false);
+      setMessage("キーワードを登録しました");
       await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : "キーワードの保存に失敗しました");
     }
+  }
+
+  function openKeywordCreateModal() {
+    setKeywordForm(emptyKeyword);
+    setIsKeywordModalOpen(true);
+  }
+
+  function closeKeywordModal() {
+    setIsKeywordModalOpen(false);
+    setKeywordForm(emptyKeyword);
   }
 
   async function toggleKeyword(keyword: Keyword) {
@@ -538,11 +620,22 @@ export default function App() {
       const createdSource = await api.createSource(sourceForm);
       setSources((current) => sortSourcesByNewest([createdSource, ...current.filter((source) => source.id !== createdSource.id)]));
       setSourceForm(emptySource);
+      setIsSourceModalOpen(false);
       setMessage("情報源を登録しました。スクレイピング準備にも反映されています。");
       await loadAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : "情報源の保存に失敗しました");
     }
+  }
+
+  function openSourceCreateModal() {
+    setSourceForm(emptySource);
+    setIsSourceModalOpen(true);
+  }
+
+  function closeSourceModal() {
+    setIsSourceModalOpen(false);
+    setSourceForm(emptySource);
   }
 
   async function toggleSource(source: Source) {
@@ -702,6 +795,7 @@ export default function App() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Scraping job の作成に失敗しました";
       appendTerminalLine("error", errorMessage);
+      addToast("error", errorMessage);
       setError(errorMessage);
       setIsScrapingRunning(false);
     }
@@ -729,15 +823,23 @@ export default function App() {
               nextProgress.message = "取得中";
             } else if (jobEvent.event_type === "skip") {
               nextProgress.status = "完了";
-              nextProgress.message = jobEvent.message.includes("minimum_interval") ? "直近で取得済みのためスキップ" : "スキップ";
-              nextProgress.cooldownUntil = Date.now() + SCRAPING_MIN_INTERVAL_SECONDS * 1000;
+              nextProgress.message = messageForSkipEvent(jobEvent);
+              const reason = getPayloadString(jobEvent.payload, "reason");
+              const nextRetrySeconds = getPayloadNumber(jobEvent.payload, "next_retry_seconds");
+              nextProgress.cooldownUntil = reason === "minimum_interval" && nextRetrySeconds !== null
+                ? Date.now() + nextRetrySeconds * 1000
+                : undefined;
             } else if (jobEvent.event_type === "error") {
               nextProgress.status = "失敗";
               nextProgress.message = jobEvent.message;
-            } else if (jobEvent.event_type === "source_done" || jobEvent.event_type === "candidate") {
+              nextProgress.cooldownUntil = undefined;
+            } else if (jobEvent.event_type === "candidate") {
+              nextProgress.status = "実行中";
+              nextProgress.message = "商品候補を作成";
+            } else if (jobEvent.event_type === "source_done") {
               nextProgress.status = "完了";
               nextProgress.message = "取得完了";
-              nextProgress.cooldownUntil = Date.now() + SCRAPING_MIN_INTERVAL_SECONDS * 1000;
+              nextProgress.cooldownUntil = undefined;
             }
             return { ...current, [target.key]: nextProgress };
           });
@@ -755,7 +857,18 @@ export default function App() {
       }
       setIsScrapingRunning(false);
       appendTerminalLine("info", "Refreshing candidates and logs");
-      void api.getScrapingJob(jobId).then(setActiveScrapingJob).catch(() => undefined);
+      void api.getScrapingJob(jobId).then((job) => {
+        setActiveScrapingJob(job);
+        if (data.status === "completed" && job.skipped_sources > 0) {
+          addToast("warning", "一部の情報源がスキップされました");
+        } else if (data.status === "completed") {
+          addToast("success", "Scraping Job が完了しました");
+        } else {
+          addToast("error", "Scraping Job に失敗しました");
+        }
+      }).catch(() => {
+        addToast(data.status === "completed" ? "success" : "error", data.status === "completed" ? "Scraping Job が完了しました" : "Scraping Job に失敗しました");
+      });
       void loadAll().then(() => {
         setActiveTab("collection");
         setMessage(data.status === "completed" ? "Scraping job が完了しました" : "Scraping job が失敗しました");
@@ -769,6 +882,7 @@ export default function App() {
         eventSourceRef.current = null;
       }
       setIsScrapingRunning(false);
+      addToast("error", "Scraping Job に失敗しました");
       setError("SSE接続に失敗しました");
     };
   }
@@ -776,7 +890,7 @@ export default function App() {
   function editProduct(product: Product) {
     setEditingProductId(product.id);
     setProductForm(toProductInput(product));
-    setActiveTab("add-product");
+    setIsProductModalOpen(true);
   }
 
   function prefillProductFromSourceLog(log: SourceLog) {
@@ -804,7 +918,7 @@ export default function App() {
       ].filter(Boolean).join("\n"),
     });
     setMessage(candidate ? "商品候補の内容を商品登録フォームに反映しました" : "取得ログの内容を商品登録フォームに反映しました");
-    setActiveTab("add-product");
+    setIsProductModalOpen(true);
   }
 
   function prefillProductFromCandidate(candidate: ProductCandidate) {
@@ -832,7 +946,19 @@ export default function App() {
       ].filter(Boolean).join("\n"),
     });
     setMessage("商品候補の内容を商品登録フォームに反映しました");
-    setActiveTab("add-product");
+    setIsProductModalOpen(true);
+  }
+
+  function openProductCreateModal() {
+    setEditingProductId(null);
+    setProductForm(emptyProduct);
+    setIsProductModalOpen(true);
+  }
+
+  function closeProductModal() {
+    setIsProductModalOpen(false);
+    setEditingProductId(null);
+    setProductForm(emptyProduct);
   }
 
   function buildNotificationMessage(product: Product) {
@@ -845,18 +971,31 @@ export default function App() {
     setError("");
     setMessage("");
     try {
-      await api.createNotificationLog({
+      const result = await api.createNotificationLog({
         product_id: product.id,
         message: buildNotificationMessage(product),
         channel: "manual",
         status: "pending",
         sent_at: null,
       });
-      setMessage("通知ログを作成しました");
+      const notificationMessage = result.duplicated ? "同じ通知ログがすでに存在します" : "通知ログを作成しました";
+      setMessage(notificationMessage);
+      if (result.duplicated) {
+        setHighlightedNotificationLogId(result.notification_log.id);
+        window.setTimeout(() => {
+          setHighlightedNotificationLogId((current) => current === result.notification_log.id ? null : current);
+        }, 9000);
+      }
+      addToast(
+        result.duplicated ? "warning" : "success",
+        result.duplicated ? `${notificationMessage}（ID: ${result.notification_log.id}）` : notificationMessage,
+      );
       await loadAll();
       setActiveTab("notifications");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "通知ログの作成に失敗しました");
+      const errorMessage = err instanceof Error ? err.message : "通知ログの作成に失敗しました";
+      setError(errorMessage);
+      addToast("error", errorMessage);
     }
   }
 
@@ -885,9 +1024,6 @@ export default function App() {
         <button className={activeTab === "products" ? "active" : ""} onClick={() => setActiveTab("products")}>
           商品一覧
         </button>
-        <button className={activeTab === "add-product" ? "active" : ""} onClick={() => setActiveTab("add-product")}>
-          <Plus size={16} /> 商品登録
-        </button>
         <button className={activeTab === "source-management" ? "active" : ""} onClick={() => setActiveTab("source-management")}>
           情報源管理
         </button>
@@ -899,15 +1035,21 @@ export default function App() {
         </button>
       </nav>
 
-      {message && <div className="notice success"><CheckCircle2 size={16} />{message}</div>}
-      {error && <div className="notice error">{error}</div>}
+      <ToastContainer toasts={toasts} />
 
       <main>
         {activeTab === "products" && (
           <section className="panel">
             <div className="section-heading">
-              <h2>商品一覧</h2>
-              <span>{products.length}件</span>
+              <div className="section-title-group">
+                <h2>商品一覧</h2>
+                <span className="count-badge">現在 {products.length} 件</span>
+              </div>
+              <div className="heading-actions">
+                <button className="primary-button" onClick={openProductCreateModal}>
+                  <Plus size={16} /> 商品情報を登録
+                </button>
+              </div>
             </div>
             <div className="filters">
               <label>
@@ -1013,33 +1155,22 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === "add-product" && (
-          <section className="panel">
-            <div className="section-heading">
-              <h2>{editingProductId === null ? "商品登録" : "商品編集"}</h2>
-              {editingProductId !== null && (
-                <button className="secondary-button" onClick={() => { setEditingProductId(null); setProductForm(emptyProduct); }}>
-                  <X size={16} /> キャンセル
-                </button>
-              )}
-            </div>
-            <ProductForm value={productForm} onChange={setProductForm} onSubmit={submitProduct} categories={categories} />
-          </section>
-        )}
-
         {activeTab === "keywords" && (
           <section className="panel">
             <div className="section-heading">
-              <h2>キーワード</h2>
-              <span>{keywords.length}件</span>
+              <div className="section-title-group">
+                <h2>検出キーワード管理</h2>
+                <span className="count-badge">現在 {keywords.length} 件</span>
+              </div>
+              <div className="heading-actions">
+                <button className="primary-button" onClick={openKeywordCreateModal}>
+                  <Plus size={16} /> キーワードを追加
+                </button>
+              </div>
             </div>
-            <form className="inline-form" onSubmit={submitKeyword}>
-              <input placeholder="カテゴリ" value={keywordForm.category} onChange={(event) => setKeywordForm({ ...keywordForm, category: event.target.value })} required />
-              <input placeholder="キーワード" value={keywordForm.keyword} onChange={(event) => setKeywordForm({ ...keywordForm, keyword: event.target.value })} required />
-              <input type="number" min="1" max="3" value={keywordForm.priority} onChange={(event) => setKeywordForm({ ...keywordForm, priority: Number(event.target.value) })} />
-              <input placeholder="メモ" value={keywordForm.memo} onChange={(event) => setKeywordForm({ ...keywordForm, memo: event.target.value })} />
-              <button className="primary-button"><Save size={16} /> 保存</button>
-            </form>
+            <p className="section-description">
+              有効なキーワードはスクレイピング時の商品候補検出・カテゴリ判定・スコアリングに使われます。無効なキーワードは保存されますが、検出には使われません。
+            </p>
             <SimpleTable
               headers={["カテゴリ", "キーワード", "優先度", "有効", "メモ", "操作"]}
               rows={keywords.map((keyword) => [
@@ -1049,7 +1180,7 @@ export default function App() {
                 keyword.is_active ? "有効" : "無効",
                 keyword.memo ?? "",
                 <div className="actions" key={keyword.id}>
-                  <button className="secondary-button" onClick={() => void toggleKeyword(keyword)}>{keyword.is_active ? "無効化" : "有効化"}</button>
+                  <button className="secondary-button" onClick={() => void toggleKeyword(keyword)}>{keyword.is_active ? "検出から外す" : "検出に使う"}</button>
                   <button className="icon-button danger" onClick={() => void api.deleteKeyword(keyword.id).then(loadAll)} title="削除"><Trash2 size={16} /></button>
                 </div>,
               ])}
@@ -1128,20 +1259,13 @@ export default function App() {
           <section className="panel">
             <div className="section-heading">
               <h2>情報源管理</h2>
-              <span>{sources.length}件</span>
+              <div className="heading-actions">
+                <span>{sources.length}件</span>
+                <button className="primary-button" onClick={openSourceCreateModal}>
+                  <Plus size={16} /> 情報源URLを登録
+                </button>
+              </div>
             </div>
-            <h3 className="subheading">新規情報源</h3>
-            <form className="source-form" onSubmit={submitSource}>
-              <input placeholder="情報源名" value={sourceForm.source_name} onChange={(event) => setSourceForm({ ...sourceForm, source_name: event.target.value })} required />
-              <select value={sourceForm.source_type} onChange={(event) => setSourceForm({ ...sourceForm, source_type: event.target.value })}>
-                {sourceTypes.map((type) => <option key={type} value={type}>{sourceTypeLabels[type]}</option>)}
-              </select>
-              <input placeholder="リンク" value={sourceForm.url} onChange={(event) => setSourceForm({ ...sourceForm, url: event.target.value })} required />
-              <input placeholder="対象カテゴリ" value={sourceForm.target_category} onChange={(event) => setSourceForm({ ...sourceForm, target_category: event.target.value })} required />
-              <input type="number" min="1" max="3" value={sourceForm.priority} onChange={(event) => setSourceForm({ ...sourceForm, priority: Number(event.target.value) })} />
-              <input placeholder="メモ" value={sourceForm.memo} onChange={(event) => setSourceForm({ ...sourceForm, memo: event.target.value })} />
-              <button className="primary-button"><Plus size={16} /> 情報源を追加</button>
-            </form>
             <h3 className="subheading">登録済み情報源</h3>
             <SimpleTable
               headers={["名前", "種類", "リンク", "カテゴリ", "優先度", "有効", "メモ", "操作"]}
@@ -1170,24 +1294,128 @@ export default function App() {
             </div>
             <SimpleTable
               headers={["ID", "商品ID", "チャンネル", "状態", "メッセージ", "作成日", "操作"]}
-              rows={notificationLogs.map((log) => [
-                String(log.id),
-                String(log.product_id),
-                log.channel === "manual" ? "手動" : log.channel,
-                log.status === "pending" ? "未送信" : log.status,
-                log.message,
-                formatDate(log.created_at),
-                <div className="actions" key={log.id}>
-                  <button className="secondary-button" onClick={() => void api.updateNotificationLog(log.id, { status: "sent", sent_at: new Date().toISOString() }).then(loadAll)}>
-                    送信済みにする
-                  </button>
-                  <button className="icon-button danger" onClick={() => void api.deleteNotificationLog(log.id).then(loadAll)} title="削除"><Trash2 size={16} /></button>
-                </div>,
-              ])}
+              rows={notificationLogs.map((log) => ({
+                className: highlightedNotificationLogId === log.id ? "duplicate-highlight-row" : undefined,
+                cells: [
+                  <span className="notification-log-id" key={log.id}>{log.id}</span>,
+                  String(log.product_id),
+                  log.channel === "manual" ? "手動" : log.channel,
+                  log.status === "pending" ? "未送信" : log.status,
+                  log.message,
+                  formatDate(log.created_at),
+                  <div className="actions" key={log.id}>
+                    <button className="secondary-button" onClick={() => void api.updateNotificationLog(log.id, { status: "sent", sent_at: new Date().toISOString() }).then(loadAll)}>
+                      送信済みにする
+                    </button>
+                    <button className="icon-button danger" onClick={() => void api.deleteNotificationLog(log.id).then(loadAll)} title="削除"><Trash2 size={16} /></button>
+                  </div>,
+                ],
+              }))}
             />
           </section>
         )}
       </main>
+
+      {isProductModalOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={closeProductModal}>
+          <div className="product-modal" role="dialog" aria-modal="true" aria-labelledby="product-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2 id="product-modal-title">{editingProductId === null ? "商品情報を登録" : "商品情報を編集"}</h2>
+              <button className="icon-button" onClick={closeProductModal} title="閉じる"><X size={16} /></button>
+            </div>
+            <div className="product-modal-content">
+              <ProductForm value={productForm} onChange={setProductForm} onSubmit={submitProduct} categories={categories} />
+            </div>
+            <div className="modal-actions">
+              <button className="secondary-button" onClick={closeProductModal}>キャンセル</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isSourceModalOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={closeSourceModal}>
+          <div className="source-modal" role="dialog" aria-modal="true" aria-labelledby="source-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2 id="source-modal-title">情報源URLを登録</h2>
+              <button className="icon-button" onClick={closeSourceModal} title="閉じる"><X size={16} /></button>
+            </div>
+            <form className="source-form source-modal-form" onSubmit={submitSource}>
+              <label>
+                情報源名
+                <input placeholder="情報源名" value={sourceForm.source_name} onChange={(event) => setSourceForm({ ...sourceForm, source_name: event.target.value })} required />
+              </label>
+              <label>
+                URL
+                <input placeholder="リンク" value={sourceForm.url} onChange={(event) => setSourceForm({ ...sourceForm, url: event.target.value })} required />
+              </label>
+              <label>
+                対象カテゴリ
+                <input placeholder="対象カテゴリ" value={sourceForm.target_category} onChange={(event) => setSourceForm({ ...sourceForm, target_category: event.target.value })} required />
+              </label>
+              <label>
+                source_type
+                <select value={sourceForm.source_type} onChange={(event) => setSourceForm({ ...sourceForm, source_type: event.target.value })}>
+                  {sourceTypes.map((type) => <option key={type} value={type}>{sourceTypeLabels[type]}</option>)}
+                </select>
+              </label>
+              <label>
+                priority
+                <input type="number" min="1" max="3" value={sourceForm.priority} onChange={(event) => setSourceForm({ ...sourceForm, priority: Number(event.target.value) })} />
+              </label>
+              <label>
+                memo
+                <input placeholder="メモ" value={sourceForm.memo} onChange={(event) => setSourceForm({ ...sourceForm, memo: event.target.value })} />
+              </label>
+              <label className="checkbox-label">
+                <input type="checkbox" checked={sourceForm.is_active} onChange={(event) => setSourceForm({ ...sourceForm, is_active: event.target.checked })} />
+                is_active
+              </label>
+              <div className="modal-actions wide">
+                <button type="button" className="secondary-button" onClick={closeSourceModal}>キャンセル</button>
+                <button className="primary-button"><Plus size={16} /> 情報源URLを登録</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isKeywordModalOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={closeKeywordModal}>
+          <div className="keyword-modal" role="dialog" aria-modal="true" aria-labelledby="keyword-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2 id="keyword-modal-title">検出キーワードを追加</h2>
+              <button className="icon-button" onClick={closeKeywordModal} title="閉じる"><X size={16} /></button>
+            </div>
+            <form className="keyword-modal-form" onSubmit={submitKeyword}>
+              <label>
+                カテゴリ
+                <input placeholder="例: ポケモンカード" value={keywordForm.category} onChange={(event) => setKeywordForm({ ...keywordForm, category: event.target.value })} required />
+              </label>
+              <label>
+                キーワード
+                <input placeholder="例: ポケカ 再販" value={keywordForm.keyword} onChange={(event) => setKeywordForm({ ...keywordForm, keyword: event.target.value })} required />
+              </label>
+              <label>
+                priority
+                <input type="number" min="1" max="3" value={keywordForm.priority} onChange={(event) => setKeywordForm({ ...keywordForm, priority: Number(event.target.value) })} />
+              </label>
+              <label className="checkbox-label">
+                <input type="checkbox" checked={keywordForm.is_active} onChange={(event) => setKeywordForm({ ...keywordForm, is_active: event.target.checked })} />
+                検出に使う
+              </label>
+              <label className="wide">
+                memo
+                <input placeholder="メモ" value={keywordForm.memo} onChange={(event) => setKeywordForm({ ...keywordForm, memo: event.target.value })} />
+              </label>
+              <div className="modal-actions wide">
+                <button type="button" className="secondary-button" onClick={closeKeywordModal}>キャンセル</button>
+                <button className="primary-button"><Plus size={16} /> キーワードを追加</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {isDeleteLogsModalOpen && (
         <div className="modal-backdrop" role="presentation" onClick={() => setIsDeleteLogsModalOpen(false)}>
@@ -1304,7 +1532,11 @@ export default function App() {
                   </label>
                   <label>
                     情報源名
-                    <input value={scrapingPrep.sourceName} onChange={(event) => setScrapingPrep({ ...scrapingPrep, sourceName: event.target.value })} />
+                    <input
+                      placeholder="例: 公式, 入荷Now, サンリオ"
+                      value={scrapingPrep.sourceName}
+                      onChange={(event) => setScrapingPrep({ ...scrapingPrep, sourceName: event.target.value })}
+                    />
                   </label>
                   <div className="url-panel">
                     <div className="url-panel-header">
@@ -1397,15 +1629,15 @@ export default function App() {
                     <div className="terminal-order-marker">ログ開始 ↑</div>
                     {terminalLines.length > 0 ? terminalLines.map((line) => (
                       <div className={`terminal-line terminal-line-${line.level}`} key={line.id}>
-                        <span>{line.time}</span>
-                        <strong>[{line.level === "success" ? "DONE" : line.level.toUpperCase()}]</strong>
-                        <p>{line.message}</p>
+                        <span className="terminal-time">{line.time}</span>
+                        <strong className="terminal-level">[{line.level === "success" ? "DONE" : line.level.toUpperCase()}]</strong>
+                        <p className="terminal-message">{line.message}</p>
                       </div>
                     )) : (
                       <div className="terminal-line terminal-line-info">
-                        <span>{formatTerminalTime()}</span>
-                        <strong>[INFO]</strong>
-                        <p>Waiting for scraping actions</p>
+                        <span className="terminal-time">{formatTerminalTime()}</span>
+                        <strong className="terminal-level">[INFO]</strong>
+                        <p className="terminal-message">Waiting for scraping actions</p>
                       </div>
                     )}
                     <div className="terminal-order-marker terminal-latest-marker">最新ログ ↓</div>
@@ -1494,7 +1726,7 @@ function ProductForm({
   );
 }
 
-function SimpleTable({ headers, rows }: { headers: string[]; rows: Array<Array<ReactNode>> }) {
+function SimpleTable({ headers, rows }: { headers: string[]; rows: TableRow[] }) {
   return (
     <div className="table-wrap">
       <table>
@@ -1502,11 +1734,15 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: Array<Array<R
           <tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr>
         </thead>
         <tbody>
-          {rows.map((row, index) => (
-            <tr key={index}>
-              {row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}
+          {rows.map((row, index) => {
+            const cells = Array.isArray(row) ? row : row.cells;
+            const className = Array.isArray(row) ? undefined : row.className;
+            return (
+            <tr className={className} key={index}>
+              {cells.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
