@@ -291,6 +291,93 @@ def finish_collection_run(
     return db_collection_run
 
 
+def create_scraping_job(
+    db: Session,
+    *,
+    job_uid: str,
+    target_category: str | None,
+    selected_statuses: str | None,
+    source_ids: str,
+    total_sources: int,
+) -> models.ScrapingJob:
+    db_job = models.ScrapingJob(
+        job_uid=job_uid,
+        status="queued",
+        target_category=target_category,
+        selected_statuses=selected_statuses,
+        source_ids=source_ids,
+        total_sources=total_sources,
+    )
+    db.add(db_job)
+    db.commit()
+    db.refresh(db_job)
+    return db_job
+
+
+def get_scraping_job_by_uid(db: Session, job_uid: str) -> models.ScrapingJob | None:
+    statement = select(models.ScrapingJob).where(models.ScrapingJob.job_uid == job_uid).limit(1)
+    return db.scalar(statement)
+
+
+def list_scraping_jobs(db: Session, *, limit: int = 50, offset: int = 0) -> list[models.ScrapingJob]:
+    statement = (
+        select(models.ScrapingJob)
+        .order_by(models.ScrapingJob.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return list(db.scalars(statement))
+
+
+def save_scraping_job(db: Session, db_job: models.ScrapingJob) -> models.ScrapingJob:
+    db.add(db_job)
+    db.commit()
+    db.refresh(db_job)
+    return db_job
+
+
+def create_scraping_job_event(
+    db: Session,
+    *,
+    job_id: int,
+    event_type: str,
+    level: str,
+    message: str,
+    source_id: int | None = None,
+    source_name: str | None = None,
+    source_url: str | None = None,
+    payload: str | None = None,
+) -> models.ScrapingJobEvent:
+    db_event = models.ScrapingJobEvent(
+        job_id=job_id,
+        event_type=event_type,
+        level=level,
+        message=message,
+        source_id=source_id,
+        source_name=source_name,
+        source_url=source_url,
+        payload=payload,
+    )
+    db.add(db_event)
+    db.commit()
+    db.refresh(db_event)
+    return db_event
+
+
+def list_scraping_job_events(
+    db: Session,
+    *,
+    job_id: int,
+    after_id: int = 0,
+) -> list[models.ScrapingJobEvent]:
+    statement = (
+        select(models.ScrapingJobEvent)
+        .where(models.ScrapingJobEvent.job_id == job_id, models.ScrapingJobEvent.id > after_id)
+        .order_by(models.ScrapingJobEvent.id.asc())
+    )
+    return list(db.scalars(statement))
+
+
 def list_product_candidates(
     db: Session,
     *,

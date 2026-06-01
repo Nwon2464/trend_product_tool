@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownUp,
   CheckCircle2,
@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { api } from "./api";
+import { API_BASE_URL, api } from "./api";
 import type {
   Keyword,
   KeywordInput,
@@ -22,6 +22,8 @@ import type {
   Product,
   ProductCandidate,
   ProductInput,
+  ScrapingJob,
+  ScrapingJobEvent,
   Source,
   SourceInput,
   SourceLog,
@@ -44,9 +46,18 @@ const sortOptions = [
   { value: "release_date:asc", label: "発売日が近い順" },
   { value: "trend_score:desc", label: "スコアが高い順" },
 ];
+const SCRAPING_MIN_INTERVAL_SECONDS = 300;
 type ScrapingTargetStatus = "待機中" | "実行中" | "完了" | "失敗";
 type ScrapingTargetProgress = {
   status: ScrapingTargetStatus;
+  message: string;
+  cooldownUntil?: number;
+};
+type TerminalLogLevel = "info" | "start" | "fetch" | "parse" | "keyword" | "candidate" | "success" | "warn" | "error";
+type TerminalLine = {
+  id: string;
+  time: string;
+  level: TerminalLogLevel;
   message: string;
 };
 type SourceLogFilter = "すべて" | "候補検出" | "登録済み" | "未登録";
@@ -124,6 +135,22 @@ function formatDate(value: string | null) {
 function formatPriceYen(value: number | null) {
   if (value === null) return "-";
   return `${value.toLocaleString("ja-JP")} 円`;
+}
+
+function formatDuration(seconds: number) {
+  const safeSeconds = Math.max(0, seconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function formatTerminalTime(date = new Date()) {
+  return date.toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 function expectationLabel(score: number) {
@@ -210,6 +237,12 @@ export default function App() {
   const [scrapingProgress, setScrapingProgress] = useState<Record<string, ScrapingTargetProgress>>({});
   const [selectedScrapingKeys, setSelectedScrapingKeys] = useState<string[]>([]);
   const [sourceLogFilter, setSourceLogFilter] = useState<SourceLogFilter>("すべて");
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([]);
+  const [activeScrapingJob, setActiveScrapingJob] = useState<ScrapingJob | null>(null);
+  const terminalBodyRef = useRef<HTMLDivElement | null>(null);
+  const terminalLineSeq = useRef(0);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const categories = useMemo(() => {
     const values = new Set<string>();
@@ -291,6 +324,82 @@ export default function App() {
     scrapingUrls.filter((source) => selectedScrapingKeys.includes(source.key))
   ), [scrapingUrls, selectedScrapingKeys]);
 
+  const sourceCooldownUntilById = useMemo(() => {
+    const values = new Map<number, number>();
+    sourceLogs.forEach((log) => {
+      const detectedAt = new Date(log.detected_at).getTime();
+      if (Number.isNaN(detectedAt)) return;
+      const cooldownUntil = detectedAt + SCRAPING_MIN_INTERVAL_SECONDS * 1000;
+      const current = values.get(log.source_id) ?? 0;
+      if (cooldownUntil > current) {
+        values.set(log.source_id, cooldownUntil);
+      }
+    });
+    return values;
+  }, [sourceLogs]);
+
+  const getScrapingCooldownUntil = useCallback((target: (typeof scrapingUrls)[number]) => {
+    const progressCooldownUntil = scrapingProgress[target.key]?.cooldownUntil ?? 0;
+    const sourceCooldownUntil = typeof target.id === "number" ? sourceCooldownUntilById.get(target.id) ?? 0 : 0;
+    return Math.max(progressCooldownUntil, sourceCooldownUntil);
+  }, [scrapingProgress, sourceCooldownUntilById]);
+
+  const getScrapingRemainingSeconds = useCallback((target: (typeof scrapingUrls)[number]) => {
+    const cooldownUntil = getScrapingCooldownUntil(target);
+    return Math.max(0, Math.ceil((cooldownUntil - nowMs) / 1000));
+  }, [getScrapingCooldownUntil, nowMs]);
+
+  const runnableScrapingTargets = useMemo(() => (
+    selectedScrapingTargets.filter((target) => getScrapingRemainingSeconds(target) === 0)
+  ), [getScrapingRemainingSeconds, selectedScrapingTargets]);
+
+  const appendTerminalLine = useCallback((level: TerminalLogLevel, message: string) => {
+    terminalLineSeq.current += 1;
+    setTerminalLines((current) => [
+      ...current,
+      {
+        id: `${Date.now()}-${terminalLineSeq.current}`,
+        time: formatTerminalTime(),
+        level,
+        message,
+      },
+    ]);
+  }, []);
+
+  const appendScrapingJobEvent = useCallback((event: ScrapingJobEvent) => {
+    const levelByEventType: Record<string, TerminalLogLevel> = {
+      start: "start",
+      source_start: "start",
+      fetch: "fetch",
+      parse: "parse",
+      keyword: "keyword",
+      candidate: "candidate",
+      skip: "warn",
+      warn: "warn",
+      error: "error",
+      source_done: "success",
+      done: "success",
+    };
+    const level = levelByEventType[event.event_type] ?? (event.level === "error" ? "error" : event.level === "warn" ? "warn" : event.level === "success" ? "success" : "info");
+    const eventTime = new Date(event.created_at);
+    terminalLineSeq.current += 1;
+    setTerminalLines((current) => [
+      ...current,
+      {
+        id: `sse-${event.id}-${terminalLineSeq.current}`,
+        time: Number.isNaN(eventTime.getTime()) ? formatTerminalTime() : formatTerminalTime(eventTime),
+        level,
+        message: event.message,
+      },
+    ]);
+  }, []);
+
+  const scrollTerminalToLatest = useCallback(() => {
+    const body = terminalBodyRef.current;
+    if (!body) return;
+    body.scrollTop = body.scrollHeight;
+  }, []);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -341,6 +450,33 @@ export default function App() {
       document.body.style.overflow = previousOverflow;
     };
   }, [evidenceCandidate, isDeleteLogsModalOpen, isScrapingModalOpen]);
+
+  useEffect(() => {
+    if (!isScrapingModalOpen) return;
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isScrapingModalOpen]);
+
+  useEffect(() => {
+    if (!isScrapingModalOpen) return;
+    appendTerminalLine("info", "Scraping modal opened");
+  }, [appendTerminalLine, isScrapingModalOpen]);
+
+  useEffect(() => {
+    if (!isScrapingModalOpen) return;
+    appendTerminalLine("info", `Sources loaded: ${scrapingUrls.length}`);
+  }, [appendTerminalLine, isScrapingModalOpen, scrapingUrls.length]);
+
+  useEffect(() => {
+    scrollTerminalToLatest();
+  }, [scrollTerminalToLatest, terminalLines]);
+
+  useEffect(() => {
+    return () => {
+      eventSourceRef.current?.close();
+    };
+  }, []);
 
   useEffect(() => {
     setSelectedScrapingKeys((current) => (
@@ -475,7 +611,7 @@ export default function App() {
     try {
       const result = await api.runCollector(source.id);
       if (result.skipped_reason === "minimum_interval") {
-        setMessage("取得間隔が短いためスキップしました");
+        setMessage("直近で取得済みのためスキップ");
       } else if (result.skipped_reason === "robots_disallow") {
         setMessage("robots.txt により取得をスキップしました");
       } else if (result.skipped_reason === "no_usable_items") {
@@ -491,54 +627,18 @@ export default function App() {
   }
 
   async function startScrapingFromPrep() {
-    const targets = selectedScrapingTargets;
+    const targets = runnableScrapingTargets;
     if (targets.length === 0) {
       return;
     }
-
-    setError("");
-    setMessage("");
-    setIsScrapingRunning(true);
-    setScrapingProgress((current) => ({
-      ...current,
-      ...Object.fromEntries(targets.map((target) => [target.key, { status: "待機中" as const, message: "" }])),
-    }));
-    let successCount = 0;
-    let failureCount = 0;
-    try {
-      for (const target of targets) {
-        try {
-          await runScrapingTarget(target);
-          successCount += 1;
-        } catch {
-          failureCount += 1;
-        }
-      }
-      await loadAll();
-      setActiveTab("collection");
-      setMessage(`一括Scraping完了: ${successCount}件完了 / ${failureCount}件失敗`);
-      if (failureCount > 0) {
-        setError("一部URLのScrapingに失敗しました");
-      }
-    } finally {
-      setIsScrapingRunning(false);
-    }
+    await startScrapingJob(targets);
   }
 
   async function runSingleScrapingTarget(target: (typeof scrapingUrls)[number]) {
-    setError("");
-    setMessage("");
-    setIsScrapingRunning(true);
-    try {
-      const resultMessage = await runScrapingTarget(target);
-      await loadAll();
-      setActiveTab("collection");
-      setMessage(`Scraping完了: ${resultMessage}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Scrapingに失敗しました");
-    } finally {
-      setIsScrapingRunning(false);
+    if (getScrapingRemainingSeconds(target) > 0) {
+      return;
     }
+    await startScrapingJob([target]);
   }
 
   function toggleScrapingTarget(key: string) {
@@ -554,59 +654,123 @@ export default function App() {
   }
 
   async function retryScrapingTarget(target: (typeof scrapingUrls)[number]) {
+    if (getScrapingRemainingSeconds(target) > 0) {
+      return;
+    }
+    await startScrapingJob([target]);
+  }
+
+  async function startScrapingJob(targets: (typeof scrapingUrls)[number][]) {
     setError("");
     setMessage("");
     setIsScrapingRunning(true);
+    setActiveScrapingJob(null);
+    eventSourceRef.current?.close();
+    setScrapingProgress((current) => ({
+      ...current,
+      ...Object.fromEntries(targets.map((target) => [target.key, { status: "待機中" as const, message: "" }])),
+    }));
     try {
-      const resultMessage = await runScrapingTarget(target);
-      await loadAll();
-      setMessage(`再実行完了: ${resultMessage}`);
+      const sourceIds = targets.map((target) => target.id);
+      const selectedStatuses = scrapingPrep.status === "すべて" ? null : [scrapingPrep.status];
+      appendTerminalLine("info", "POST /scraping-jobs");
+      const job = await api.createScrapingJob({
+        source_ids: sourceIds,
+        target_category: scrapingPrep.category === "すべて" ? null : scrapingPrep.category,
+        selected_statuses: selectedStatuses,
+        max_items_per_source: 10,
+        respect_robots: true,
+        minimum_interval_seconds: SCRAPING_MIN_INTERVAL_SECONDS,
+      });
+      setActiveScrapingJob({
+        job_id: job.job_id,
+        status: job.status,
+        target_category: scrapingPrep.category === "すべて" ? null : scrapingPrep.category,
+        selected_statuses: selectedStatuses,
+        total_sources: job.total_sources,
+        completed_sources: 0,
+        failed_sources: 0,
+        skipped_sources: 0,
+        created_logs_count: 0,
+        created_candidates_count: 0,
+        started_at: null,
+        finished_at: null,
+        error_message: null,
+      });
+      appendTerminalLine("info", `Scraping job created: ${job.job_id}`);
+      connectScrapingJobEvents(job.job_id, targets);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "再実行に失敗しました");
-    } finally {
+      const errorMessage = err instanceof Error ? err.message : "Scraping job の作成に失敗しました";
+      appendTerminalLine("error", errorMessage);
+      setError(errorMessage);
       setIsScrapingRunning(false);
     }
   }
 
-  async function runScrapingTarget(target: (typeof scrapingUrls)[number]) {
-    setScrapingProgress((current) => ({
-      ...current,
-      [target.key]: { status: "実行中", message: "取得中" },
-    }));
-    try {
-      const sourceId = typeof target.id === "number"
-        ? target.id
-        : (await api.createSource({
-            source_name: scrapingPrep.sourceName.trim() || target.name,
-            source_type: "manual",
-            url: target.url,
-            target_category: target.category === "すべて" ? "共通" : target.category,
-            priority: 2,
-            is_active: true,
-            memo: `スクレイピング準備から追加 / ステータス: ${scrapingPrep.status}`,
-          })).id;
-      const selectedStatuses = scrapingPrep.status === "すべて" ? undefined : [scrapingPrep.status];
-      const result = await api.runCollector(sourceId, selectedStatuses);
-      const resultMessage = result.skipped_reason === "minimum_interval"
-        ? "取得間隔でスキップ"
-        : result.skipped_reason === "robots_disallow"
-          ? "robots.txt でスキップ"
-          : result.skipped_reason === "no_usable_items"
-            ? "保存対象なし"
-            : `${result.candidates.length}件候補作成 / ${result.created_count}件ログ保存 / ${result.skipped_count}件スキップ`;
-      setScrapingProgress((current) => ({
-        ...current,
-        [target.key]: { status: "完了", message: resultMessage },
-      }));
-      return resultMessage;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "失敗";
-      setScrapingProgress((current) => ({
-        ...current,
-        [target.key]: { status: "失敗", message: errorMessage },
-      }));
-      throw err;
-    }
+  function connectScrapingJobEvents(jobId: string, targets: (typeof scrapingUrls)[number][]) {
+    const targetBySourceId = new Map(targets.map((target) => [target.id, target]));
+    const eventSource = new EventSource(`${API_BASE_URL}/scraping-jobs/${jobId}/events`);
+    eventSourceRef.current = eventSource;
+
+    eventSource.addEventListener("progress", (event) => {
+      const jobEvent = JSON.parse((event as MessageEvent).data) as ScrapingJobEvent;
+      appendScrapingJobEvent(jobEvent);
+      if (jobEvent.source_id !== null) {
+        const target = targetBySourceId.get(jobEvent.source_id);
+        if (target) {
+          setScrapingProgress((current) => {
+            const nextProgress: ScrapingTargetProgress = {
+              status: current[target.key]?.status ?? "待機中",
+              message: current[target.key]?.message ?? "",
+              cooldownUntil: current[target.key]?.cooldownUntil,
+            };
+            if (jobEvent.event_type === "source_start" || jobEvent.event_type === "fetch" || jobEvent.event_type === "parse") {
+              nextProgress.status = "実行中";
+              nextProgress.message = "取得中";
+            } else if (jobEvent.event_type === "skip") {
+              nextProgress.status = "完了";
+              nextProgress.message = jobEvent.message.includes("minimum_interval") ? "直近で取得済みのためスキップ" : "スキップ";
+              nextProgress.cooldownUntil = Date.now() + SCRAPING_MIN_INTERVAL_SECONDS * 1000;
+            } else if (jobEvent.event_type === "error") {
+              nextProgress.status = "失敗";
+              nextProgress.message = jobEvent.message;
+            } else if (jobEvent.event_type === "source_done" || jobEvent.event_type === "candidate") {
+              nextProgress.status = "完了";
+              nextProgress.message = "取得完了";
+              nextProgress.cooldownUntil = Date.now() + SCRAPING_MIN_INTERVAL_SECONDS * 1000;
+            }
+            return { ...current, [target.key]: nextProgress };
+          });
+        }
+      }
+      void api.getScrapingJob(jobId).then(setActiveScrapingJob).catch(() => undefined);
+    });
+
+    eventSource.addEventListener("done", (event) => {
+      const data = JSON.parse((event as MessageEvent).data) as { status?: string; message?: string };
+      appendTerminalLine(data.status === "completed" ? "success" : "error", data.message ?? "Scraping job completed");
+      eventSource.close();
+      if (eventSourceRef.current === eventSource) {
+        eventSourceRef.current = null;
+      }
+      setIsScrapingRunning(false);
+      appendTerminalLine("info", "Refreshing candidates and logs");
+      void api.getScrapingJob(jobId).then(setActiveScrapingJob).catch(() => undefined);
+      void loadAll().then(() => {
+        setActiveTab("collection");
+        setMessage(data.status === "completed" ? "Scraping job が完了しました" : "Scraping job が失敗しました");
+      });
+    });
+
+    eventSource.onerror = () => {
+      appendTerminalLine("error", "SSE connection error");
+      eventSource.close();
+      if (eventSourceRef.current === eventSource) {
+        eventSourceRef.current = null;
+      }
+      setIsScrapingRunning(false);
+      setError("SSE接続に失敗しました");
+    };
   }
 
   function editProduct(product: Product) {
@@ -1100,91 +1264,158 @@ export default function App() {
 
       {isScrapingModalOpen && (
         <div className="modal-backdrop" role="presentation" onClick={() => setIsScrapingModalOpen(false)}>
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="scraping-modal-title" onClick={(event) => event.stopPropagation()}>
+          <div className="modal scraping-modal" role="dialog" aria-modal="true" aria-labelledby="scraping-modal-title" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <h2 id="scraping-modal-title">スクレイピング準備</h2>
               <button className="icon-button" onClick={() => setIsScrapingModalOpen(false)} title="閉じる"><X size={16} /></button>
             </div>
-            <div className="prep-grid">
-              <label>
-                カテゴリ
-                <select value={scrapingPrep.category} onChange={(event) => setScrapingPrep({ ...scrapingPrep, category: event.target.value })}>
-                  <option value="すべて">すべて</option>
-                  {categories.map((category) => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                ステータス
-                <select value={scrapingPrep.status} onChange={(event) => setScrapingPrep({ ...scrapingPrep, status: event.target.value })}>
-                  <option value="すべて">すべて</option>
-                  {statusOptions.map((status) => (
-                    <option key={status} value={status}>{status}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                情報源名
-                <input value={scrapingPrep.sourceName} onChange={(event) => setScrapingPrep({ ...scrapingPrep, sourceName: event.target.value })} />
-              </label>
-              <div className="url-panel">
-                <div className="url-panel-header">
-                  <h3 className="subheading">対象URL</h3>
-                </div>
-                {scrapingUrls.length > 0 ? (
-                  <>
-                    <div className="url-selection-bar">
-                      <button className="secondary-button select-all-button" disabled={isScrapingRunning || scrapingUrls.length === 0} onClick={toggleAllScrapingTargets}>
-                        {selectedScrapingKeys.length === scrapingUrls.length ? "選択解除" : "すべて選択"}
-                      </button>
-                      <span>{selectedScrapingKeys.length} / {scrapingUrls.length} 件選択中</span>
-                    </div>
-                    <ul className="url-list">
-                      {scrapingUrls.map((source) => (
-                        <li key={source.key}>
-                          <div className="url-row">
-                            <label className="url-checkbox" title="一括Scrapingに含める">
-                              <input
-                                type="checkbox"
-                                checked={selectedScrapingKeys.includes(source.key)}
-                                disabled={isScrapingRunning}
-                                onChange={() => toggleScrapingTarget(source.key)}
-                              />
-                            </label>
-                            <div className="url-main">
-                              <strong>{source.name} / {source.kind}</strong>
-                              <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a>
-                            </div>
-                            <div className="url-progress">
-                              <span className={`status-text status-${scrapingProgress[source.key]?.status ?? "実行前"}`}>{scrapingProgress[source.key]?.status ?? "実行前"}</span>
-                              <small>{scrapingProgress[source.key]?.message ?? ""}</small>
-                              <button className="secondary-button mini-button" disabled={isScrapingRunning} onClick={() => void runSingleScrapingTarget(source)}>
-                                このURLをScraping
-                              </button>
-                              <button className="secondary-button mini-button" disabled={isScrapingRunning || scrapingProgress[source.key]?.status !== "失敗"} onClick={() => void retryScrapingTarget(source)}>
-                                再実行
-                              </button>
-                            </div>
-                          </div>
-                        </li>
+            <div className="scraping-modal-layout">
+              <div className="scraping-modal-left">
+                <div className="prep-grid">
+                  <label>
+                    カテゴリ
+                    <select
+                      value={scrapingPrep.category}
+                      onChange={(event) => {
+                        setScrapingPrep({ ...scrapingPrep, category: event.target.value });
+                        appendTerminalLine("info", `Category selected: ${event.target.value}`);
+                      }}
+                    >
+                      <option value="すべて">すべて</option>
+                      {categories.map((category) => (
+                        <option key={category} value={category}>{category}</option>
                       ))}
-                    </ul>
-                  </>
-                ) : (
-                  <p className="muted-text">このカテゴリの情報源URLはまだ登録されていません。</p>
-                )}
+                    </select>
+                  </label>
+                  <label>
+                    ステータス
+                    <select
+                      value={scrapingPrep.status}
+                      onChange={(event) => {
+                        setScrapingPrep({ ...scrapingPrep, status: event.target.value });
+                        appendTerminalLine("info", `Status selected: ${event.target.value}`);
+                      }}
+                    >
+                      <option value="すべて">すべて</option>
+                      {statusOptions.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    情報源名
+                    <input value={scrapingPrep.sourceName} onChange={(event) => setScrapingPrep({ ...scrapingPrep, sourceName: event.target.value })} />
+                  </label>
+                  <div className="url-panel">
+                    <div className="url-panel-header">
+                      <h3 className="subheading">対象URL</h3>
+                    </div>
+                    {scrapingUrls.length > 0 ? (
+                      <>
+                        <div className="url-selection-bar">
+                          <button className="secondary-button select-all-button" disabled={isScrapingRunning || scrapingUrls.length === 0} onClick={toggleAllScrapingTargets}>
+                            {selectedScrapingKeys.length === scrapingUrls.length ? "選択解除" : "すべて選択"}
+                          </button>
+                          <span>{selectedScrapingKeys.length} / {scrapingUrls.length} 件選択中</span>
+                        </div>
+                        <ul className="url-list">
+                          {scrapingUrls.map((source) => {
+                            const progress = scrapingProgress[source.key];
+                            const remainingSeconds = getScrapingRemainingSeconds(source);
+                            const isCoolingDown = remainingSeconds > 0;
+                            const displayStatus = progress?.status === "完了" && progress.message === "取得完了"
+                              ? "取得完了"
+                              : progress?.status ?? "実行前";
+                            return (
+                              <li key={source.key}>
+                                <div className="url-row">
+                                  <label className="url-checkbox" title="一括Scrapingに含める">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedScrapingKeys.includes(source.key)}
+                                      disabled={isScrapingRunning}
+                                      onChange={() => toggleScrapingTarget(source.key)}
+                                    />
+                                  </label>
+                                  <div className="url-main">
+                                    <strong>{source.name} / {source.kind}</strong>
+                                    <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a>
+                                  </div>
+                                  <div className="url-progress">
+                                    <span className={`status-text status-${progress?.status ?? "実行前"}`}>{displayStatus}</span>
+                                    <small>{progress?.message ?? ""}</small>
+                                    {isCoolingDown && (
+                                      <small>次回取得まで {formatDuration(remainingSeconds)}</small>
+                                    )}
+                                    <button className="secondary-button mini-button" disabled={isScrapingRunning || isCoolingDown} onClick={() => void runSingleScrapingTarget(source)}>
+                                      このURLをScraping
+                                    </button>
+                                    {progress?.status === "失敗" && (
+                                      <button className="secondary-button mini-button" disabled={isScrapingRunning || isCoolingDown} onClick={() => void retryScrapingTarget(source)}>
+                                        再試行
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </>
+                    ) : (
+                      <p className="muted-text">このカテゴリの情報源URLはまだ登録されていません。</p>
+                    )}
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button
+                    className={`primary-button ${runnableScrapingTargets.length > 0 ? "scraping-bulk-ready" : "scraping-bulk-empty"}`}
+                    onClick={() => void startScrapingFromPrep()}
+                    disabled={isScrapingRunning || runnableScrapingTargets.length === 0}
+                  >
+                    <Download size={16} /> 選択したURLを一括Scraping
+                  </button>
+                  <button className="secondary-button" onClick={() => setIsScrapingModalOpen(false)} disabled={isScrapingRunning}>閉じる</button>
+                </div>
               </div>
-            </div>
-            <div className="modal-actions">
-              <button
-                className={`primary-button ${selectedScrapingTargets.length > 0 ? "scraping-bulk-ready" : "scraping-bulk-empty"}`}
-                onClick={() => void startScrapingFromPrep()}
-                disabled={isScrapingRunning || selectedScrapingTargets.length === 0}
-              >
-                <Download size={16} /> 選択したURLを一括Scraping
-              </button>
-              <button className="secondary-button" onClick={() => setIsScrapingModalOpen(false)} disabled={isScrapingRunning}>閉じる</button>
+              <div className="scraping-modal-right">
+                <div className="scraping-terminal">
+                  <div className="terminal-header">
+                    <div>
+                      <span>terminal</span>
+                      <small>上: 古いログ / 下: 最新ログ</small>
+                    </div>
+                    <strong>{isScrapingRunning ? "running" : "idle"}</strong>
+                  </div>
+                  <div className="terminal-job-status">
+                    <span>status: {activeScrapingJob?.status ?? "no job"}</span>
+                    <span>sources: {activeScrapingJob ? `${activeScrapingJob.completed_sources}/${activeScrapingJob.total_sources}` : "0/0"}</span>
+                    <span>candidates: {activeScrapingJob?.created_candidates_count ?? 0}</span>
+                    <span>failed/skipped: {activeScrapingJob ? `${activeScrapingJob.failed_sources}/${activeScrapingJob.skipped_sources}` : "0/0"}</span>
+                  </div>
+                  <div className="terminal-body" ref={terminalBodyRef}>
+                    <div className="terminal-order-marker">ログ開始 ↑</div>
+                    {terminalLines.length > 0 ? terminalLines.map((line) => (
+                      <div className={`terminal-line terminal-line-${line.level}`} key={line.id}>
+                        <span>{line.time}</span>
+                        <strong>[{line.level === "success" ? "DONE" : line.level.toUpperCase()}]</strong>
+                        <p>{line.message}</p>
+                      </div>
+                    )) : (
+                      <div className="terminal-line terminal-line-info">
+                        <span>{formatTerminalTime()}</span>
+                        <strong>[INFO]</strong>
+                        <p>Waiting for scraping actions</p>
+                      </div>
+                    )}
+                    <div className="terminal-order-marker terminal-latest-marker">最新ログ ↓</div>
+                  </div>
+                  <div className="terminal-actions">
+                    <button className="secondary-button mini-button" onClick={() => setTerminalLines([])}>ログをクリア</button>
+                    <button className="secondary-button mini-button" onClick={scrollTerminalToLatest}>最新ログへ移動</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

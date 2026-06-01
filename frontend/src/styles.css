@@ -534,6 +534,11 @@ td small {
   width: 100%;
 }
 
+.scraping-modal {
+  height: min(860px, calc(100vh - 40px));
+  max-width: min(1320px, calc(100vw - 40px));
+}
+
 .confirm-modal {
   background: #ffffff;
   border-radius: 8px;
@@ -571,6 +576,198 @@ td small {
   grid-template-columns: repeat(3, minmax(150px, 1fr));
   grid-template-rows: auto 1fr;
   height: calc(100% - 92px);
+}
+
+.scraping-modal-layout {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
+  height: calc(100% - 42px);
+  min-height: 0;
+}
+
+.scraping-modal-left {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.scraping-modal-left .prep-grid {
+  height: 100%;
+  min-height: 0;
+}
+
+.scraping-modal-left .modal-actions {
+  margin-top: 10px;
+}
+
+.scraping-modal-right {
+  min-height: 0;
+}
+
+.scraping-terminal {
+  background: #12191d;
+  border: 1px solid #243239;
+  border-radius: 8px;
+  color: #d9edf0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.terminal-header {
+  align-items: center;
+  background: #172126;
+  border-bottom: 1px solid #243239;
+  display: flex;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.terminal-header span,
+.terminal-header small,
+.terminal-header strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.terminal-header div {
+  display: grid;
+  gap: 2px;
+}
+
+.terminal-header span {
+  color: #9fb2b9;
+}
+
+.terminal-header small {
+  color: #71858d;
+  font-size: 10px;
+}
+
+.terminal-header strong {
+  color: #8ce0b0;
+  text-transform: uppercase;
+}
+
+.terminal-body {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.terminal-job-status {
+  border-bottom: 1px solid #243239;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 8px 12px;
+}
+
+.terminal-job-status span {
+  color: #9fb2b9;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-line {
+  align-items: start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 64px 58px minmax(0, 1fr);
+  min-height: 20px;
+}
+
+.terminal-order-marker {
+  border-bottom: 1px solid #243239;
+  color: #71858d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  text-align: center;
+}
+
+.terminal-latest-marker {
+  border-bottom: 0;
+  border-top: 1px solid #243239;
+  margin-bottom: 0;
+  margin-top: 4px;
+  padding-bottom: 0;
+  padding-top: 4px;
+}
+
+.terminal-line span,
+.terminal-line strong,
+.terminal-line p {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.terminal-line span {
+  color: #71858d;
+}
+
+.terminal-line strong {
+  color: #d9edf0;
+}
+
+.terminal-line p {
+  color: #d9edf0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.terminal-line-info strong {
+  color: #8bc7ff;
+}
+
+.terminal-line-start strong {
+  color: #f2c96d;
+}
+
+.terminal-line-fetch strong,
+.terminal-line-parse strong,
+.terminal-line-keyword strong,
+.terminal-line-candidate strong {
+  color: #b9a7ff;
+}
+
+.terminal-line-success strong {
+  color: #8ce0b0;
+}
+
+.terminal-line-warn strong {
+  color: #ffcf7a;
+}
+
+.terminal-line-error strong {
+  color: #ff8f8f;
+}
+
+.terminal-actions {
+  align-items: center;
+  background: #172126;
+  border-top: 1px solid #243239;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 10px;
+}
+
+.terminal-actions .mini-button {
+  width: auto;
 }
 
 .prep-grid input,
@@ -714,7 +911,7 @@ td small {
   display: grid;
   gap: 6px;
   justify-items: start;
-  min-width: 150px;
+  width: 150px;
 }
 
 .url-progress .status-text,

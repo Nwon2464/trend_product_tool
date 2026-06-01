@@ -110,6 +110,50 @@ export type CollectorRunResponse = {
   candidates: ProductCandidate[];
 };
 
+export type ScrapingJobCreateRequest = {
+  source_ids: number[];
+  target_category: string | null;
+  selected_statuses: string[] | null;
+  max_items_per_source: number;
+  respect_robots: boolean;
+  minimum_interval_seconds: number;
+};
+
+export type ScrapingJobCreateResponse = {
+  job_id: string;
+  status: string;
+  total_sources: number;
+  message: string;
+};
+
+export type ScrapingJob = {
+  job_id: string;
+  status: string;
+  target_category: string | null;
+  selected_statuses: string[] | null;
+  total_sources: number;
+  completed_sources: number;
+  failed_sources: number;
+  skipped_sources: number;
+  created_logs_count: number;
+  created_candidates_count: number;
+  started_at: string | null;
+  finished_at: string | null;
+  error_message: string | null;
+};
+
+export type ScrapingJobEvent = {
+  id: number;
+  event_type: string;
+  level: string;
+  message: string;
+  source_id: number | null;
+  source_name: string | null;
+  source_url: string | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+};
+
 export type NotificationLog = {
   id: number;
   product_id: number;

@@ -7,12 +7,15 @@ import type {
   Product,
   ProductCandidate,
   ProductInput,
+  ScrapingJob,
+  ScrapingJobCreateRequest,
+  ScrapingJobCreateResponse,
   Source,
   SourceInput,
   SourceLog,
 } from "./types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 type ApiErrorDetail = {
   type?: string;
@@ -191,6 +194,13 @@ export const api = {
         selected_statuses: selectedStatuses?.length ? selectedStatuses : null,
       }),
     }),
+  createScrapingJob: (input: ScrapingJobCreateRequest) =>
+    request<ScrapingJobCreateResponse>("/scraping-jobs", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  getScrapingJob: (jobId: string) => request<ScrapingJob>(`/scraping-jobs/${jobId}`),
+  listScrapingJobs: () => request<ScrapingJob[]>("/scraping-jobs"),
   listProductCandidates: () => request<ProductCandidate[]>("/product-candidates"),
   listNotificationLogs: () => request<NotificationLog[]>("/notification-logs"),
   createNotificationLog: (input: NotificationLogInput) =>

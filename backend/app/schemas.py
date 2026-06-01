@@ -210,6 +210,50 @@ class CollectorRunResponse(BaseModel):
     candidates: list["ProductCandidateRead"] = Field(default_factory=list)
 
 
+class ScrapingJobCreateRequest(BaseModel):
+    source_ids: list[int] = Field(..., min_length=1, max_length=50)
+    target_category: str | None = Field(default=None, max_length=100)
+    selected_statuses: list[str] | None = None
+    max_items_per_source: int = Field(default=10, ge=1, le=30)
+    respect_robots: bool = True
+    minimum_interval_seconds: int = Field(default=300, ge=0, le=86400)
+
+
+class ScrapingJobCreateResponse(BaseModel):
+    job_id: str
+    status: str
+    total_sources: int
+    message: str
+
+
+class ScrapingJobRead(BaseModel):
+    job_id: str
+    status: str
+    target_category: str | None
+    selected_statuses: list[str] | None
+    total_sources: int
+    completed_sources: int
+    failed_sources: int
+    skipped_sources: int
+    created_logs_count: int
+    created_candidates_count: int
+    started_at: datetime | None
+    finished_at: datetime | None
+    error_message: str | None
+
+
+class ScrapingJobEventRead(BaseModel):
+    id: int
+    event_type: str
+    level: str
+    message: str
+    source_id: int | None
+    source_name: str | None
+    source_url: str | None
+    payload: dict | None
+    created_at: datetime
+
+
 class ProductCandidateBase(BaseModel):
     source_log_id: int = Field(..., ge=1)
     category: str = Field(..., min_length=1, max_length=100)

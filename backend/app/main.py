@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, SessionLocal, engine
-from .routers import collectors, keywords, notification_logs, product_candidates, products, source_logs, sources
+from .routers import collectors, keywords, notification_logs, product_candidates, products, scraping_jobs, source_logs, sources
 from .seed import seed_initial_keywords, seed_initial_sources
 
 Base.metadata.create_all(bind=engine)
@@ -33,6 +33,7 @@ app.include_router(notification_logs.router)
 app.include_router(source_logs.router)
 app.include_router(collectors.router)
 app.include_router(product_candidates.router)
+app.include_router(scraping_jobs.router)
 
 
 @app.get("/health")

@@ -125,6 +125,60 @@ class CollectionRun(Base):
     )
 
 
+class ScrapingJob(Base):
+    __tablename__ = "scraping_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    job_uid: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="queued", index=True)
+    target_category: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    selected_statuses: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_ids: Mapped[str] = mapped_column(Text, nullable=False)
+    total_sources: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completed_sources: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_sources: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped_sources: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_logs_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_candidates_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class ScrapingJobEvent(Base):
+    __tablename__ = "scraping_job_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    job_id: Mapped[int] = mapped_column(
+        ForeignKey("scraping_jobs.id"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    level: Mapped[str] = mapped_column(String(50), nullable=False, default="info", index=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    source_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 class ProductCandidate(Base):
     __tablename__ = "product_candidates"
 
