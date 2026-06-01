@@ -569,6 +569,7 @@ td small {
 .candidate-category th,
 .candidate-category td {
   line-height: 1.45;
+  overflow: hidden;
   padding: 9px 10px;
   vertical-align: middle;
 }
@@ -596,6 +597,7 @@ td small {
 .candidate-title-clamp,
 .candidate-reason-clamp {
   display: -webkit-box;
+  line-height: 1.45;
   min-width: 0;
   overflow: hidden;
   word-break: break-word;
@@ -610,6 +612,7 @@ td small {
 .candidate-title-clamp,
 .candidate-reason-clamp {
   -webkit-line-clamp: 2;
+  max-height: 2.9em;
 }
 
 .candidate-category-header {
@@ -703,6 +706,15 @@ td small {
 
 .candidate-icon-button.active {
   font-weight: 800;
+}
+
+.candidate-delete-button {
+  color: #8a4b43;
+}
+
+.candidate-delete-button:hover {
+  background: #fff4f1;
+  border-color: #d8a095;
 }
 
 .candidate-icon-like.active {

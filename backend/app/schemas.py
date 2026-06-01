@@ -359,3 +359,27 @@ class NotificationLogCreateResponse(BaseModel):
     duplicated: bool
     message: str
     notification_log: NotificationLogRead
+
+
+class MaintenanceCleanupRequest(BaseModel):
+    delete_product_candidates: bool = False
+    delete_source_logs: bool = False
+    delete_scraping_jobs: bool = False
+    delete_collection_runs: bool = False
+    delete_notification_logs: bool = False
+    delete_test_products: bool = False
+    delete_localhost_sources: bool = False
+    dry_run: bool = False
+    confirm: str | None = None
+
+
+class MaintenanceCleanupResponse(BaseModel):
+    dry_run: bool
+    deleted_product_candidates: int = 0
+    deleted_source_logs: int = 0
+    deleted_scraping_job_events: int = 0
+    deleted_scraping_jobs: int = 0
+    deleted_collection_runs: int = 0
+    deleted_notification_logs: int = 0
+    deleted_test_products: int = 0
+    deleted_localhost_sources: int = 0

@@ -217,6 +217,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(input),
     }),
+  deleteProductCandidate: (id: number) =>
+    request<void>(`/product-candidates/${id}`, {
+      method: "DELETE",
+    }),
   listNotificationLogs: () => request<NotificationLog[]>("/notification-logs"),
   createNotificationLog: (input: NotificationLogInput) =>
     request<NotificationLogCreateResponse>("/notification-logs", {

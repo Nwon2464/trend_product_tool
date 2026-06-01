@@ -1,6 +1,5 @@
 import {
   FormEvent,
-  ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -9,30 +8,48 @@ import {
 } from "react";
 import {
   AlertTriangle,
-  ArrowDownUp,
-  Ban,
-  Check,
   CheckCircle,
   Clock,
   Download,
   ExternalLink,
   FileText,
-  Heart,
   Loader,
-  Megaphone,
-  Pencil,
   PackagePlus,
   Plus,
   SendToBack,
   RefreshCw,
-  Save,
   Search,
-  ShoppingBag,
   Trash2,
   X,
   XCircle,
 } from "lucide-react";
 import { API_BASE_URL, api } from "./api";
+import type {
+  ProductFilters,
+  ScrapingTargetProgress,
+  ScrapingTargetStatus,
+  SourceLogFilter,
+  Tab,
+  TerminalLogLevel,
+  TerminalLine,
+  ToastMessage,
+  ToastType,
+} from "./appTypes";
+import { ProductForm } from "./components/ProductForm";
+import { ProductListPanel } from "./components/ProductListPanel";
+import { SimpleTable } from "./components/SimpleTable";
+import { ToastContainer } from "./components/ToastContainer";
+import {
+  SCRAPING_MIN_INTERVAL_SECONDS,
+  candidateStatusActions,
+  emptyKeyword,
+  emptyProduct,
+  emptySource,
+  sourceTypeLabels,
+  sourceTypes,
+  statusOptions,
+} from "./constants";
+import type { CandidateStatusAction } from "./constants";
 import type {
   Keyword,
   KeywordInput,
@@ -47,338 +64,24 @@ import type {
   SourceInput,
   SourceLog,
 } from "./types";
-
-const statusOptions = [
-  "予約開始",
-  "発売予定",
-  "発売中",
-  "再販",
-  "抽選販売",
-  "売り切れ",
-  "完売",
-  "廃盤",
-  "不明",
-];
-const sourceTypes = [
-  "official",
-  "retail",
-  "summary",
-  "sns_x",
-  "sns_instagram",
-  "news",
-  "manual",
-  "other",
-];
-const sourceTypeLabels: Record<string, string> = {
-  official: "公式",
-  retail: "小売・EC",
-  summary: "まとめ",
-  sns_x: "X",
-  sns_instagram: "Instagram",
-  news: "ニュース",
-  manual: "手動",
-  other: "その他",
-};
-const sortOptions = [
-  { value: "created_at:desc", label: "登録日が新しい順" },
-  { value: "release_date:asc", label: "発売日が近い順" },
-  { value: "trend_score:desc", label: "スコアが高い順" },
-];
-const SCRAPING_MIN_INTERVAL_SECONDS = 300;
-type ScrapingTargetStatus = "待機中" | "実行中" | "完了" | "失敗" | "スキップ";
-type ScrapingTargetProgress = {
-  status: ScrapingTargetStatus;
-  message: string;
-  cooldownUntil?: number;
-};
-type TerminalLogLevel =
-  | "info"
-  | "start"
-  | "fetch"
-  | "parse"
-  | "detail"
-  | "keyword"
-  | "candidate"
-  | "success"
-  | "warn"
-  | "error";
-type TerminalLine = {
-  id: string;
-  time: string;
-  level: TerminalLogLevel;
-  message: string;
-};
-type ToastType = "success" | "info" | "warning" | "error";
-type ToastMessage = {
-  id: string;
-  type: ToastType;
-  message: string;
-  createdAt: number;
-};
-type TableRow =
-  | Array<ReactNode>
-  | {
-      cells: Array<ReactNode>;
-      className?: string;
-    };
-type SourceLogFilter = "すべて" | "候補検出" | "登録済み" | "未登録";
-type SourceLogStatus = "候補検出" | "登録済み" | "未登録";
-type CandidateStatusAction = {
-  status: ProductCandidateStatus;
-  label: string;
-  activeLabel: string;
-  icon: typeof Heart;
-  className: string;
-};
-
-const candidateStatusLabels: Record<ProductCandidateStatus, string> = {
-  new: "新規",
-  watching: "いいね済み",
-  confirmed: "確認済み",
-  ignored: "無視",
-  purchased: "購入済み",
-};
-
-const candidateStatusActions: CandidateStatusAction[] = [
-  {
-    status: "watching",
-    label: "いいねする",
-    activeLabel: "いいねを解除する",
-    icon: Heart,
-    className: "like",
-  },
-  {
-    status: "confirmed",
-    label: "確認済みにする",
-    activeLabel: "確認済みを解除する",
-    icon: Check,
-    className: "confirmed",
-  },
-  {
-    status: "ignored",
-    label: "無視する",
-    activeLabel: "無視を解除する",
-    icon: Ban,
-    className: "ignored",
-  },
-  {
-    status: "purchased",
-    label: "購入済みにする",
-    activeLabel: "購入済みを解除する",
-    icon: ShoppingBag,
-    className: "purchased",
-  },
-];
-
-const emptyProduct: ProductInput = {
-  category: "ポケモンカード",
-  product_name: "",
-  brand: "",
-  price: "",
-  release_date: "",
-  sales_store: "",
-  status: "不明",
-  source_name: "",
-  source_url: "",
-  trend_score: 0,
-  memo: "",
-};
-
-const emptyKeyword: KeywordInput = {
-  category: "ポケモンカード",
-  keyword: "",
-  priority: 2,
-  is_active: true,
-  memo: "",
-};
-
-const emptySource: SourceInput = {
-  source_name: "",
-  source_type: "manual",
-  url: "",
-  target_category: "ポケモンカード",
-  priority: 2,
-  is_active: true,
-  memo: "",
-};
-
-type Tab =
-  | "products"
-  | "collection"
-  | "source-management"
-  | "keywords"
-  | "notifications";
-
-function toProductInput(product: Product): ProductInput {
-  return {
-    category: product.category,
-    product_name: product.product_name,
-    brand: product.brand ?? "",
-    price: product.price === null ? "" : String(product.price),
-    release_date: product.release_date ?? "",
-    sales_store: product.sales_store ?? "",
-    status: product.status,
-    source_name: product.source_name ?? "",
-    source_url: product.source_url ?? "",
-    trend_score: product.trend_score,
-    memo: product.memo ?? "",
-  };
-}
-
-function scoreLabel(score: number) {
-  if (score >= 80) return "高優先度";
-  if (score >= 60) return "注視";
-  if (score >= 40) return "低";
-  return "除外";
-}
-
-function scoreClass(score: number) {
-  if (score >= 80) return "high";
-  if (score >= 60) return "watch";
-  if (score >= 40) return "low";
-  return "ignore";
-}
-
-function formatDate(value: string | null) {
-  if (!value) return "-";
-  return value.slice(0, 10);
-}
-
-function formatPriceYen(value: number | null) {
-  if (value === null) return "-";
-  return `${value.toLocaleString("ja-JP")} 円`;
-}
-
-function formatDuration(seconds: number) {
-  const safeSeconds = Math.max(0, seconds);
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainingSeconds = safeSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
-}
-
-function formatTerminalTime(date = new Date()) {
-  return date.toLocaleTimeString("ja-JP", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-}
-
-function getPayloadString(
-  payload: Record<string, unknown> | null,
-  key: string,
-) {
-  const value = payload?.[key];
-  return typeof value === "string" ? value : null;
-}
-
-function getPayloadNumber(
-  payload: Record<string, unknown> | null,
-  key: string,
-) {
-  const value = payload?.[key];
-  return typeof value === "number" ? value : null;
-}
-
-function messageForSkipEvent(event: ScrapingJobEvent) {
-  const reason = getPayloadString(event.payload, "reason");
-  const details = getPayloadString(event.payload, "details");
-  if (reason === "minimum_interval") {
-    const seconds = getPayloadNumber(event.payload, "next_retry_seconds");
-    return seconds === null
-      ? "直近で取得済みのためスキップ"
-      : `直近で取得済みのためスキップ。次回取得まで ${formatDuration(seconds)}`;
-  }
-  if (reason === "robots_disallow") return "robots.txt によりスキップ";
-  if (reason === "duplicate_url") return "重複URLのためスキップ";
-  if (reason === "no_usable_items") return "対象候補なし";
-  return details ?? event.message;
-}
-
-function expectationLabel(score: number) {
-  if (score >= 80) return "高期待";
-  if (score >= 60) return "注目";
-  if (score >= 40) return "低め";
-  return "保留";
-}
-
-function candidateStatusLabel(status: ProductCandidateStatus) {
-  return candidateStatusLabels[status] ?? status;
-}
-
-function categoryTone(category: string) {
-  if (category.includes("ポケモン")) return "pokemon";
-  if (category.includes("ワンピース")) return "onepiece";
-  if (category.includes("ガチャ")) return "gacha";
-  if (category.includes("サンリオ")) return "sanrio";
-  if (category.includes("ちいかわ")) return "chiikawa";
-  if (category.includes("スタバ")) return "starbucks";
-  if (category.includes("アパレル")) return "apparel";
-  if (category.includes("お菓子") || category.includes("廃盤")) return "snack";
-  return "default";
-}
-
-function formatDetectedKeywords(value: string | null) {
-  if (!value) return "-";
-  try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) {
-      return parsed.join(", ");
-    }
-  } catch {
-    // Keep the raw detector output when it is not JSON.
-  }
-  return value;
-}
-
-function detectedKeywordList(value: string | null) {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) {
-      return parsed.map(String).filter(Boolean);
-    }
-  } catch {
-    // Keep using the raw detector output when it is not JSON.
-  }
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function sortSourcesByNewest(items: Source[]) {
-  return [...items].sort((a, b) => {
-    const createdDiff =
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    return createdDiff || b.id - a.id;
-  });
-}
-
-function getSourceLogStatus(
-  log: SourceLog,
-  productSourceUrls: Set<string>,
-  candidatesBySourceLogId: Map<number, ProductCandidate>,
-): SourceLogStatus {
-  if (productSourceUrls.has(log.url)) return "登録済み";
-  if (candidatesBySourceLogId.has(log.id)) return "候補検出";
-  return "未登録";
-}
-
-function ToastContainer({ toasts }: { toasts: ToastMessage[] }) {
-  if (toasts.length === 0) return null;
-  return (
-    <div className="toast-container" aria-live="polite" aria-atomic="false">
-      {toasts.map((toast) => (
-        <div className={`toast toast-${toast.type}`} key={toast.id}>
-          <span className="toast-type">{toast.type}</span>
-          <p>{toast.message}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
+import {
+  candidateStatusLabel,
+  categoryTone,
+  detectedKeywordList,
+  expectationLabel,
+  formatDate,
+  formatDetectedKeywords,
+  formatPriceYen,
+  formatTerminalTime,
+  getPayloadNumber,
+  getPayloadString,
+  getSourceLogStatus,
+  messageForSkipEvent,
+  scoreClass,
+  scoreLabel,
+  sortSourcesByNewest,
+  toProductInput,
+} from "./utils/formatters";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("collection");
@@ -392,7 +95,7 @@ export default function App() {
   const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>(
     [],
   );
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<ProductFilters>({
     category: "",
     keyword: "",
     status: "",
@@ -1383,6 +1086,28 @@ export default function App() {
     }
   }
 
+  async function deleteProductCandidate(candidate: ProductCandidate) {
+    const confirmed = window.confirm(
+      "この商品候補を削除しますか？\nこの操作は元に戻せません。",
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.deleteProductCandidate(candidate.id);
+      setProductCandidates((current) =>
+        current.filter((item) => item.id !== candidate.id),
+      );
+      setEvidenceCandidate((current) =>
+        current?.id === candidate.id ? null : current,
+      );
+      addToast("success", "商品候補を削除しました");
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "商品候補の削除に失敗しました";
+      addToast("error", errorMessage);
+    }
+  }
+
   function renderCandidateStatusButton(
     candidate: ProductCandidate,
     action: CandidateStatusAction,
@@ -1586,206 +1311,20 @@ export default function App() {
 
       <main>
         {activeTab === "products" && (
-          <section className="panel">
-            <div className="section-heading">
-              <div className="section-title-group">
-                <h2>商品一覧</h2>
-                <span className="count-badge">現在 {products.length} 件</span>
-              </div>
-              <div className="heading-actions">
-                <button
-                  className="primary-button"
-                  onClick={openProductCreateModal}
-                >
-                  <Plus size={16} /> 商品情報を登録
-                </button>
-              </div>
-            </div>
-            <div className="filters">
-              <label>
-                カテゴリ
-                <select
-                  value={filters.category}
-                  onChange={(event) =>
-                    setFilters({ ...filters, category: event.target.value })
-                  }
-                >
-                  <option value="">すべて</option>
-                  {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                キーワード
-                <div className="input-with-icon">
-                  <Search size={16} />
-                  <input
-                    value={filters.keyword}
-                    onChange={(event) =>
-                      setFilters({ ...filters, keyword: event.target.value })
-                    }
-                  />
-                </div>
-              </label>
-              <label>
-                ステータス
-                <select
-                  value={filters.status}
-                  onChange={(event) =>
-                    setFilters({ ...filters, status: event.target.value })
-                  }
-                >
-                  <option value="">すべて</option>
-                  {statusOptions.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                販売店
-                <input
-                  list="stores"
-                  value={filters.sales_store}
-                  onChange={(event) =>
-                    setFilters({ ...filters, sales_store: event.target.value })
-                  }
-                />
-                <datalist id="stores">
-                  {stores.map((store) => (
-                    <option key={store} value={store} />
-                  ))}
-                </datalist>
-              </label>
-              <label>
-                最小スコア
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={filters.min_score}
-                  onChange={(event) =>
-                    setFilters({ ...filters, min_score: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                並び替え
-                <div className="input-with-icon">
-                  <ArrowDownUp size={16} />
-                  <select
-                    value={filters.sort}
-                    onChange={(event) =>
-                      setFilters({ ...filters, sort: event.target.value })
-                    }
-                  >
-                    {sortOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </label>
-              <button className="primary-button" onClick={loadAll}>
-                更新
-              </button>
-            </div>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>カテゴリ</th>
-                    <th>商品</th>
-                    <th>価格</th>
-                    <th>発売日</th>
-                    <th>販売店</th>
-                    <th>状態</th>
-                    <th>情報源</th>
-                    <th>スコア</th>
-                    <th>登録日</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.map((product) => (
-                    <tr key={product.id}>
-                      <td>{product.id}</td>
-                      <td>{product.category}</td>
-                      <td>
-                        <strong>{product.product_name}</strong>
-                        <small>{product.brand ?? "-"}</small>
-                      </td>
-                      <td>
-                        {product.price === null
-                          ? "-"
-                          : product.price.toLocaleString("ja-JP")}
-                      </td>
-                      <td>{formatDate(product.release_date)}</td>
-                      <td>{product.sales_store ?? "-"}</td>
-                      <td>{product.status}</td>
-                      <td>{product.source_name ?? "-"}</td>
-                      <td>
-                        <span
-                          className={`score score-${scoreClass(product.trend_score)}`}
-                        >
-                          {product.trend_score} /{" "}
-                          {scoreLabel(product.trend_score)}
-                        </span>
-                      </td>
-                      <td>{formatDate(product.created_at)}</td>
-                      <td className="actions">
-                        <button
-                          className="icon-button"
-                          onClick={() => editProduct(product)}
-                          title="編集"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          className="icon-button"
-                          onClick={() => void createManualNotification(product)}
-                          title="通知ログ作成"
-                        >
-                          <Megaphone size={16} />
-                        </button>
-                        {product.source_url && (
-                          <a
-                            className="icon-button"
-                            href={product.source_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            title="情報源を開く"
-                          >
-                            <ExternalLink size={16} />
-                          </a>
-                        )}
-                        <button
-                          className="icon-button danger"
-                          onClick={() => void deleteProduct(product.id)}
-                          title="削除"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {products.length === 0 && (
-                    <tr>
-                      <td colSpan={11} className="empty-cell">
-                        商品がありません
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <ProductListPanel
+            products={products}
+            filters={filters}
+            setFilters={setFilters}
+            categories={categories}
+            stores={stores}
+            onRefresh={loadAll}
+            onCreateProduct={openProductCreateModal}
+            onEditProduct={editProduct}
+            onCreateNotification={(product) =>
+              void createManualNotification(product)
+            }
+            onDeleteProduct={(productId) => void deleteProduct(productId)}
+          />
         )}
 
         {activeTab === "keywords" && (
@@ -1981,6 +1520,14 @@ export default function App() {
                               type="button"
                             >
                               <PackagePlus size={16} />
+                            </button>
+                            <button
+                              className="candidate-icon-button candidate-delete-button"
+                              onClick={() => void deleteProductCandidate(candidate)}
+                              title="商品候補を削除"
+                              type="button"
+                            >
+                              <Trash2 size={16} />
                             </button>
                           </div>,
                         ],
@@ -2895,184 +2442,6 @@ export default function App() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function ProductForm({
-  value,
-  onChange,
-  onSubmit,
-  categories,
-}: {
-  value: ProductInput;
-  onChange: (value: ProductInput) => void;
-  onSubmit: (event: FormEvent) => void;
-  categories: string[];
-}) {
-  return (
-    <form className="product-form" onSubmit={onSubmit}>
-      <label>
-        カテゴリ
-        <input
-          list="categories"
-          value={value.category}
-          onChange={(event) =>
-            onChange({ ...value, category: event.target.value })
-          }
-          required
-        />
-        <datalist id="categories">
-          {categories.map((category) => (
-            <option key={category} value={category} />
-          ))}
-        </datalist>
-      </label>
-      <label>
-        商品名
-        <input
-          value={value.product_name}
-          onChange={(event) =>
-            onChange({ ...value, product_name: event.target.value })
-          }
-          required
-        />
-      </label>
-      <label>
-        ブランド
-        <input
-          value={value.brand}
-          onChange={(event) =>
-            onChange({ ...value, brand: event.target.value })
-          }
-        />
-      </label>
-      <label>
-        価格
-        <input
-          type="number"
-          min="0"
-          value={value.price}
-          onChange={(event) =>
-            onChange({ ...value, price: event.target.value })
-          }
-        />
-      </label>
-      <label>
-        発売日
-        <input
-          type="date"
-          value={value.release_date}
-          onChange={(event) =>
-            onChange({ ...value, release_date: event.target.value })
-          }
-        />
-      </label>
-      <label>
-        販売店
-        <input
-          value={value.sales_store}
-          onChange={(event) =>
-            onChange({ ...value, sales_store: event.target.value })
-          }
-        />
-      </label>
-      <label>
-        ステータス
-        <select
-          value={value.status}
-          onChange={(event) =>
-            onChange({ ...value, status: event.target.value })
-          }
-        >
-          {statusOptions.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        情報源名
-        <input
-          value={value.source_name}
-          onChange={(event) =>
-            onChange({ ...value, source_name: event.target.value })
-          }
-        />
-      </label>
-      <label>
-        情報源リンク
-        <input
-          type="url"
-          value={value.source_url}
-          onChange={(event) =>
-            onChange({ ...value, source_url: event.target.value })
-          }
-        />
-      </label>
-      <label>
-        注目度スコア
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={value.trend_score}
-          onChange={(event) =>
-            onChange({ ...value, trend_score: Number(event.target.value) })
-          }
-        />
-        <span className="range-value">
-          {value.trend_score} / {scoreLabel(value.trend_score)}
-        </span>
-      </label>
-      <label className="wide">
-        メモ
-        <textarea
-          value={value.memo}
-          onChange={(event) => onChange({ ...value, memo: event.target.value })}
-        />
-      </label>
-      <div className="form-actions">
-        <button className="primary-button">
-          <Save size={16} /> 商品を保存
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function SimpleTable({
-  headers,
-  rows,
-}: {
-  headers: string[];
-  rows: TableRow[];
-}) {
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            {headers.map((header) => (
-              <th key={header}>{header}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => {
-            const cells = Array.isArray(row) ? row : row.cells;
-            const className = Array.isArray(row) ? undefined : row.className;
-            return (
-              <tr className={className} key={index}>
-                {cells.map((cell, cellIndex) => (
-                  <td key={cellIndex}>{cell}</td>
-                ))}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
     </div>
   );
 }

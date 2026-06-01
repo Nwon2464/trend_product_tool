@@ -117,7 +117,7 @@ def seed_initial_keywords(db: Session) -> int:
                 keyword=keyword,
                 priority=priority,
                 is_active=True,
-                memo="Initial seed keyword",
+                memo="初期登録キーワード",
             )
         )
         inserted += 1

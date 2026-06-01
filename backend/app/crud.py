@@ -451,6 +451,14 @@ def update_product_candidate(
     return db_product_candidate
 
 
+def delete_product_candidate(
+    db: Session,
+    db_product_candidate: models.ProductCandidate,
+) -> None:
+    db.delete(db_product_candidate)
+    db.commit()
+
+
 def list_notification_logs(
     db: Session,
     *,

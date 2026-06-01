@@ -132,6 +132,60 @@ PRODUCT_URL_HINTS = [
     "/press/",
 ]
 
+SALES_SIGNAL_KEYWORDS = [
+    "発売日",
+    "発売予定",
+    "販売開始",
+    "発売スタート",
+    "販売スタート",
+    "から発売",
+    "より発売",
+    "から販売",
+    "より販売",
+    "予約開始",
+    "再登場",
+    "再販",
+    "再販売",
+    "価格",
+    "税込",
+    "税抜",
+    "メーカー希望小売価格",
+    "販売価格",
+    "全国のお菓子売り場",
+    "店舗限定",
+]
+
+PRICE_CONTEXT_KEYWORDS = [
+    "税込",
+    "税抜",
+    "価格",
+    "メーカー希望小売価格",
+    "販売価格",
+    "本体価格",
+    "円（税込",
+    "円 税込",
+]
+
+SANRIO_NOISE_KEYWORDS = [
+    "Sanrio＋とは",
+    "Sanrio+とは",
+    "Sanrio＋会員",
+    "Sanrio+会員",
+    "デジタルコンテンツ",
+    "プレゼントキャンペーン",
+    "壁紙",
+    "会員限定",
+]
+
+SANRIO_NOISE_URL_PARTS = [
+    "/sanrioplus/",
+    "/news/sanrioplus/",
+]
+
+SANRIO_WEAK_URL_PARTS = [
+    "/news/spots/",
+]
+
 TITLE_CLEANUP_PATTERNS = [
     r"予約開始のお知らせ",
     r"予約受付開始",
@@ -194,6 +248,10 @@ def build_candidate_from_source_log(
         return None
     if is_noisy_title(source_log.title):
         return None
+    if is_sanrio_noise_page(source_log.title, source_log.raw_text, source_log.url):
+        return None
+    if is_sanrio_weak_path(source_log.url) and not has_sales_signal(haystack):
+        return None
 
     selected_keywords = get_keywords_for_statuses(selected_statuses)
     if selected_keywords:
@@ -229,14 +287,18 @@ def build_candidate_from_source_log(
         reasons.append(f"優先度{keyword.priority}のキーワードを検出")
         reasons.append(f"カテゴリ「{keyword.category}」の登録キーワードに一致")
 
+    product_page_only = False
     if not matched and has_product_page_signal(
         title=source_log.title,
         raw_text=source_log.raw_text,
         url=source_log.url,
         source=source,
     ):
+        if not has_sales_signal(haystack):
+            return None
+        product_page_only = True
         matched.append("商品ページ候補")
-        score += 10
+        score += 4
         reasons.append("商品ページ候補")
 
     if not matched:
@@ -244,6 +306,8 @@ def build_candidate_from_source_log(
 
     price = extract_price(haystack)
     release_date, release_date_reason = extract_release_date_with_reason(haystack)
+    if product_page_only and price is None and release_date is None:
+        return None
     sales_store = source.source_name
     product_name = clean_product_name(source_log.title)
     candidate_category = db_keyword_matches[0].category if db_keyword_matches else source.target_category
@@ -290,12 +354,17 @@ def build_candidate_from_source_log(
 
 
 def extract_price(text: str) -> int | None:
-    match = re.search(r"(?:税込|税抜|価格|メーカー希望小売価格)?\s*[¥￥]?\s*([0-9,]{2,7})\s*円", text)
-    if not match:
-        match = re.search(r"[¥￥]\s*([0-9,]{2,7})", text)
-    if not match:
-        return None
-    return int(match.group(1).replace(",", ""))
+    for match in re.finditer(r"[¥￥]\s*([0-9,]{2,7})", text):
+        return int(match.group(1).replace(",", ""))
+
+    for match in re.finditer(r"([0-9,]{2,7})\s*円", text):
+        before = text[max(0, match.start() - 24):match.start()]
+        after = text[match.end():min(len(text), match.end() + 24)]
+        context = f"{before}{match.group(0)}{after}"
+        if any(keyword in context for keyword in PRICE_CONTEXT_KEYWORDS):
+            return int(match.group(1).replace(",", ""))
+
+    return None
 
 
 def extract_release_date(text: str) -> date | None:
@@ -307,10 +376,6 @@ def extract_release_date_with_reason(text: str) -> tuple[date | None, str]:
     context_match = find_contextual_release_date(text)
     if context_match:
         return context_match.value, context_match.reason
-
-    fallback = find_general_release_date(text)
-    if fallback:
-        return fallback, "一般日付から抽出"
 
     return None, ""
 
@@ -416,6 +481,10 @@ def has_product_opportunity_signal(
     haystack = f"{title}\n{raw_text or ''}"
     if has_excluded_keyword(haystack) or is_noisy_title(title):
         return False
+    if is_sanrio_noise_page(title, raw_text, url):
+        return False
+    if is_sanrio_weak_path(url) and not has_sales_signal(haystack):
+        return False
 
     if any(keyword in haystack for keyword in get_detection_keywords()):
         return True
@@ -496,6 +565,25 @@ def has_product_page_signal(
     return title_is_specific and has_product_word and has_url_hint
 
 
+def is_sanrio_noise_page(title: str, raw_text: str | None, url: str) -> bool:
+    if any(part in url for part in SANRIO_NOISE_URL_PARTS):
+        return True
+    title_and_url = f"{title}\n{url}"
+    if any(keyword in title_and_url for keyword in SANRIO_NOISE_KEYWORDS):
+        return True
+    raw = raw_text or ""
+    raw_noise_keywords = ["デジタルコンテンツ", "プレゼントキャンペーン", "壁紙"]
+    return any(keyword in raw for keyword in raw_noise_keywords) and not has_sales_signal(raw)
+
+
+def is_sanrio_weak_path(url: str) -> bool:
+    return any(part in url for part in SANRIO_WEAK_URL_PARTS)
+
+
+def has_sales_signal(text: str) -> bool:
+    return any(keyword in text for keyword in SALES_SIGNAL_KEYWORDS) or extract_price(text) is not None
+
+
 def get_detection_keywords() -> list[str]:
     keywords: list[str] = []
     for _, _, rule_keywords in DETECTION_RULES:
@@ -547,7 +635,12 @@ def score_for_keyword_priority(priority: int) -> int:
 
 def clean_product_name(title: str) -> str:
     product_name = re.sub(r"\s+", " ", title).strip()
+    product_name = re.sub(r"\s*[｜|]\s*サンリオ\s*$", "", product_name)
+    product_name = product_name.replace("Sanrio＋会員】", "【Sanrio＋会員】")
     product_name = re.sub(r"^[【\[]?(ニュース|お知らせ|商品情報|新着情報)[】\]]?\s*[:：-]?\s*", "", product_name)
+    quoted_match = re.search(r"「([^」]{4,120})」", product_name)
+    if quoted_match and re.search(r"(登場|再登場|発売|販売|予約)", product_name):
+        product_name = quoted_match.group(1)
     for pattern in TITLE_CLEANUP_PATTERNS:
         product_name = re.sub(pattern, "", product_name)
     product_name = re.sub(r"(20[0-9]{2})[年/-]\s*([0-9]{1,2})[月/-]\s*([0-9]{1,2})\s*日?(発売|販売|登場|予定)?", "", product_name)

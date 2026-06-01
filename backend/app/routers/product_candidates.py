@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from .. import crud, schemas
@@ -36,3 +36,14 @@ def update_product_candidate(
     if db_product_candidate is None:
         raise HTTPException(status_code=404, detail="Product candidate not found")
     return crud.update_product_candidate(db, db_product_candidate, product_candidate)
+
+
+@router.delete("/{product_candidate_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_product_candidate(
+    product_candidate_id: int,
+    db: Session = Depends(get_db),
+) -> None:
+    db_product_candidate = crud.get_product_candidate(db, product_candidate_id)
+    if db_product_candidate is None:
+        raise HTTPException(status_code=404, detail="Product candidate not found")
+    crud.delete_product_candidate(db, db_product_candidate)

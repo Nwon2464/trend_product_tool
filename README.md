@@ -39,6 +39,14 @@ API は `http://localhost:8000` で起動します。
 
 SQLite ファイルは backend 起動時に `backend/trend_product.db` として作成されます。
 
+初期 seed データはデフォルトでは投入されません。初期キーワード・初期情報源を投入したい場合だけ、backend 起動時に `ENABLE_SEED_DATA=true` を指定してください。
+
+```bash
+ENABLE_SEED_DATA=true uvicorn app.main:app --reload
+```
+
+実データScrapingテスト中は、seed Source が再起動時に再有効化されないように `ENABLE_SEED_DATA` は未設定または `false` のままにしてください。
+
 ## Frontend setup
 
 ```bash
@@ -165,6 +173,26 @@ curl -X POST http://localhost:8000/collectors/run \
 
 ```bash
 curl http://localhost:8000/source-logs
+```
+
+### Maintenance cleanup
+
+実データテスト前に実行結果データを整理するためのローカル用APIです。破壊的操作のため、実行前に `backend/trend_product.db` をバックアップしてください。`dry_run=true` で削除予定件数だけ確認できます。
+
+```bash
+curl -X POST http://localhost:8000/maintenance/cleanup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "delete_product_candidates": true,
+    "delete_source_logs": true,
+    "delete_scraping_jobs": true,
+    "delete_collection_runs": true,
+    "delete_notification_logs": true,
+    "delete_test_products": true,
+    "delete_localhost_sources": true,
+    "dry_run": true,
+    "confirm": "DELETE"
+  }'
 ```
 
 ## Milestone 6 manual test
