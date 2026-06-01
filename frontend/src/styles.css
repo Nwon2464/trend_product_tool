@@ -119,6 +119,7 @@ main {
   background: #ffffff;
   border: 1px solid #d9e2e4;
   border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(23, 32, 38, 0.05);
   padding: 18px;
 }
 
@@ -339,6 +340,10 @@ td {
   font-size: 14px;
 }
 
+tbody tr:hover {
+  background: #f8fbfb;
+}
+
 td small {
   color: #63737a;
   display: block;
@@ -349,6 +354,161 @@ td small {
   color: #63737a;
   padding: 26px 10px;
   text-align: center;
+}
+
+.candidate-board {
+  display: grid;
+  gap: 18px;
+}
+
+.candidate-category {
+  border: 1px solid #d9e2e4;
+  border-left-width: 5px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.candidate-category table {
+  table-layout: fixed;
+}
+
+.candidate-category th:nth-child(1),
+.candidate-category td:nth-child(1) {
+  width: 24%;
+}
+
+.candidate-category th:nth-child(2),
+.candidate-category td:nth-child(2),
+.candidate-category th:nth-child(3),
+.candidate-category td:nth-child(3),
+.candidate-category th:nth-child(5),
+.candidate-category td:nth-child(5),
+.candidate-category th:nth-child(8),
+.candidate-category td:nth-child(8) {
+  width: 92px;
+}
+
+.candidate-category th:nth-child(4),
+.candidate-category td:nth-child(4) {
+  width: 110px;
+}
+
+.candidate-category th:nth-child(6),
+.candidate-category td:nth-child(6) {
+  width: 22%;
+}
+
+.candidate-category th:nth-child(7),
+.candidate-category td:nth-child(7) {
+  width: 14%;
+}
+
+.candidate-category th:nth-child(9),
+.candidate-category td:nth-child(9) {
+  width: 140px;
+}
+
+.candidate-category-header {
+  align-items: center;
+  background: #f8fbfb;
+  border-bottom: 1px solid #e5ecee;
+  display: flex;
+  justify-content: space-between;
+  padding: 13px 14px;
+}
+
+.candidate-category-header h3 {
+  font-size: 17px;
+}
+
+.candidate-category-header span {
+  color: #63737a;
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.category-pokemon {
+  border-left-color: #2f6db5;
+}
+
+.category-onepiece {
+  border-left-color: #b55245;
+}
+
+.category-gacha {
+  border-left-color: #8b65b8;
+}
+
+.category-sanrio {
+  border-left-color: #d75f9a;
+}
+
+.category-chiikawa {
+  border-left-color: #d6a63f;
+}
+
+.category-starbucks {
+  border-left-color: #0f7a4f;
+}
+
+.category-apparel {
+  border-left-color: #435158;
+}
+
+.category-snack {
+  border-left-color: #b7813f;
+}
+
+.category-default {
+  border-left-color: #63737a;
+}
+
+.candidate-actions {
+  align-items: stretch;
+  display: grid;
+  gap: 6px;
+  min-width: 128px;
+}
+
+.candidate-actions .primary-button,
+.candidate-actions .secondary-button {
+  width: 100%;
+}
+
+.source-link-button {
+  align-items: center;
+  background: #eef5f5;
+  border: 1px solid #c9dcde;
+  border-radius: 6px;
+  color: #0b5d63;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 5px;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 10px;
+  text-decoration: none;
+  width: 72px;
+}
+
+.empty-state {
+  background: #f8fbfb;
+  border: 1px dashed #c9d6d9;
+  border-radius: 8px;
+  padding: 28px;
+  text-align: center;
+}
+
+.empty-state h3 {
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+
+.empty-state p {
+  color: #63737a;
+  margin: 0;
 }
 
 .modal-backdrop {
@@ -379,6 +539,17 @@ td small {
   border-radius: 8px;
   box-shadow: 0 18px 48px rgba(23, 32, 38, 0.24);
   max-width: 460px;
+  padding: 16px;
+  width: 100%;
+}
+
+.evidence-modal {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(23, 32, 38, 0.24);
+  max-height: min(820px, calc(100vh - 40px));
+  max-width: 860px;
+  overflow: hidden;
   padding: 16px;
   width: 100%;
 }
@@ -435,8 +606,56 @@ td small {
   overflow-wrap: anywhere;
 }
 
-.helper-log-heading {
-  margin-top: 24px;
+.evidence-content {
+  display: grid;
+  gap: 14px;
+  max-height: calc(100vh - 170px);
+  overflow: hidden;
+}
+
+.evidence-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.evidence-grid div,
+.evidence-raw {
+  background: #f6f8f9;
+  border: 1px solid #e5ecee;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.evidence-grid span,
+.evidence-raw span {
+  color: #63737a;
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+
+.evidence-grid strong,
+.evidence-grid a {
+  color: #172026;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.evidence-raw {
+  min-height: 0;
+}
+
+.evidence-raw pre {
+  color: #172026;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
 }
 
 .url-panel-header {
@@ -446,17 +665,32 @@ td small {
   justify-content: space-between;
 }
 
-.url-select-all,
 .url-checkbox {
   align-items: center;
   display: inline-flex;
   gap: 6px;
 }
 
-.url-select-all {
-  color: #435158;
+.url-selection-bar {
+  align-items: center;
+  background: #f6f8f9;
+  border: 1px solid #e5ecee;
+  border-radius: 6px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 8px;
+}
+
+.url-selection-bar span {
+  color: #63737a;
   font-size: 12px;
   font-weight: 700;
+}
+
+.select-all-button {
+  min-width: 112px;
 }
 
 .url-checkbox {

@@ -121,11 +121,28 @@ function formatDate(value: string | null) {
   return value.slice(0, 10);
 }
 
+function formatPriceYen(value: number | null) {
+  if (value === null) return "-";
+  return `${value.toLocaleString("ja-JP")} 円`;
+}
+
 function expectationLabel(score: number) {
   if (score >= 80) return "高期待";
   if (score >= 60) return "注目";
   if (score >= 40) return "低め";
   return "保留";
+}
+
+function categoryTone(category: string) {
+  if (category.includes("ポケモン")) return "pokemon";
+  if (category.includes("ワンピース")) return "onepiece";
+  if (category.includes("ガチャ")) return "gacha";
+  if (category.includes("サンリオ")) return "sanrio";
+  if (category.includes("ちいかわ")) return "chiikawa";
+  if (category.includes("スタバ")) return "starbucks";
+  if (category.includes("アパレル")) return "apparel";
+  if (category.includes("お菓子") || category.includes("廃盤")) return "snack";
+  return "default";
 }
 
 function formatDetectedKeywords(value: string | null) {
@@ -183,6 +200,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [isScrapingModalOpen, setIsScrapingModalOpen] = useState(false);
   const [isDeleteLogsModalOpen, setIsDeleteLogsModalOpen] = useState(false);
+  const [evidenceCandidate, setEvidenceCandidate] = useState<ProductCandidate | null>(null);
   const [scrapingPrep, setScrapingPrep] = useState({
     category: "すべて",
     status: "すべて",
@@ -231,6 +249,26 @@ export default function App() {
       return scoreDiff || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     })
   ), [productCandidates]);
+
+  const candidateGroups = useMemo(() => {
+    const groups = new Map<string, ProductCandidate[]>();
+    sortedProductCandidates.forEach((candidate) => {
+      const group = groups.get(candidate.category) ?? [];
+      group.push(candidate);
+      groups.set(candidate.category, group);
+    });
+    return Array.from(groups.entries())
+      .map(([category, candidates]) => ({
+        category,
+        candidates,
+        highCount: candidates.filter((candidate) => candidate.profit_expectation >= 80).length,
+        averageExpectation: Math.round(candidates.reduce((total, candidate) => total + candidate.profit_expectation, 0) / candidates.length),
+      }))
+      .sort((a, b) => {
+        const topScoreDiff = (b.candidates[0]?.profit_expectation ?? 0) - (a.candidates[0]?.profit_expectation ?? 0);
+        return topScoreDiff || b.candidates.length - a.candidates.length;
+      });
+  }, [sortedProductCandidates]);
 
   const deletableUnregisteredLogs = useMemo(() => (
     filteredSourceLogs.filter((log) => getSourceLogStatus(log, productSourceUrls, candidatesBySourceLogId) === "未登録")
@@ -294,7 +332,7 @@ export default function App() {
   }, [loadAll]);
 
   useEffect(() => {
-    if (!isScrapingModalOpen) {
+    if (!isScrapingModalOpen && !isDeleteLogsModalOpen && evidenceCandidate === null) {
       return;
     }
     const previousOverflow = document.body.style.overflow;
@@ -302,7 +340,7 @@ export default function App() {
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [isScrapingModalOpen]);
+  }, [evidenceCandidate, isDeleteLogsModalOpen, isScrapingModalOpen]);
 
   useEffect(() => {
     setSelectedScrapingKeys((current) => (
@@ -883,45 +921,42 @@ export default function App() {
                 </label>
               </div>
             </div>
-            <h3 className="subheading">商品候補</h3>
-            <SimpleTable
-              headers={["商品名候補", "カテゴリ", "価格", "発売日", "販売元", "利益期待度", "検出理由", "検出キーワード", "情報元URL", "操作"]}
-              rows={sortedProductCandidates.map((candidate) => [
-                candidate.product_name,
-                candidate.category,
-                candidate.price === null ? "-" : candidate.price.toLocaleString("ja-JP"),
-                formatDate(candidate.release_date),
-                candidate.sales_store ?? "-",
-                <span className={`score score-${scoreClass(candidate.profit_expectation)}`} key={candidate.id}>{candidate.profit_expectation} / {expectationLabel(candidate.profit_expectation)}</span>,
-                candidate.detected_reason,
-                formatDetectedKeywords(candidate.detected_keywords),
-                <a href={candidate.source_url} target="_blank" rel="noreferrer" key={candidate.id}>{candidate.source_url}</a>,
-                <div className="actions" key={candidate.id}>
-                  <button className="secondary-button" onClick={() => prefillProductFromCandidate(candidate)}><SendToBack size={16} /> 商品登録</button>
-                </div>,
-              ])}
-            />
-            <h3 className="subheading helper-log-heading">補助ログ</h3>
-            <SimpleTable
-              headers={["ID", "タイトル", "リンク", "状態", "感知理由", "利益期待度", "検出日", "操作"]}
-              rows={filteredSourceLogs.map((log) => {
-                const candidate = candidatesBySourceLogId.get(log.id);
-                const status = getSourceLogStatus(log, productSourceUrls, candidatesBySourceLogId);
-                return [
-                  String(log.id),
-                  log.title,
-                  <a href={log.url} target="_blank" rel="noreferrer" key={log.id}>{log.url}</a>,
-                  status,
-                  candidate?.detected_reason ?? "-",
-                  candidate ? <span className={`score score-${scoreClass(candidate.profit_expectation)}`} key={candidate.id}>{candidate.profit_expectation} / {expectationLabel(candidate.profit_expectation)}</span> : "-",
-                  formatDate(log.detected_at),
-                  <div className="actions" key={log.id}>
-                    <button className="secondary-button" onClick={() => prefillProductFromSourceLog(log)}><SendToBack size={16} /> 商品候補にする</button>
-                    <button className="icon-button danger" disabled={status !== "未登録"} onClick={() => void deleteSourceLog(log)} title={status === "未登録" ? "削除" : "保護中"}><Trash2 size={16} /></button>
-                  </div>,
-                ];
-              })}
-            />
+            {candidateGroups.length > 0 ? (
+              <div className="candidate-board">
+                {candidateGroups.map((group) => (
+                  <section className={`candidate-category category-${categoryTone(group.category)}`} key={group.category}>
+                    <div className="candidate-category-header">
+                      <div>
+                        <h3>{group.category}</h3>
+                        <span>{group.candidates.length}件 / 高期待 {group.highCount}件 / 平均 {group.averageExpectation}</span>
+                      </div>
+                    </div>
+                    <SimpleTable
+                      headers={["商品名候補", "価格", "発売日", "販売元", "利益期待度", "検出理由", "キーワード", "情報元", "操作"]}
+                      rows={group.candidates.map((candidate) => [
+                        <strong key={candidate.id}>{candidate.product_name}</strong>,
+                        formatPriceYen(candidate.price),
+                        formatDate(candidate.release_date),
+                        candidate.sales_store ?? "-",
+                        <span className={`score score-${scoreClass(candidate.profit_expectation)}`} key={candidate.id}>{candidate.profit_expectation} / {expectationLabel(candidate.profit_expectation)}</span>,
+                        candidate.detected_reason,
+                        formatDetectedKeywords(candidate.detected_keywords),
+                        <a className="source-link-button" href={candidate.source_url} target="_blank" rel="noreferrer" key={candidate.id}><ExternalLink size={14} /> 開く</a>,
+                        <div className="actions candidate-actions" key={candidate.id}>
+                          <button className="secondary-button" onClick={() => setEvidenceCandidate(candidate)}><Search size={16} /> 根拠を見る</button>
+                          <button className="primary-button" onClick={() => prefillProductFromCandidate(candidate)}><SendToBack size={16} /> 商品登録へ</button>
+                        </div>,
+                      ])}
+                    />
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <h3>商品候補がありません</h3>
+                <p>スクレイピング準備から情報源を選択して候補を収集してください。</p>
+              </div>
+            )}
           </section>
         )}
 
@@ -1007,6 +1042,62 @@ export default function App() {
         </div>
       )}
 
+      {evidenceCandidate && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setEvidenceCandidate(null)}>
+          <div className="evidence-modal" role="dialog" aria-modal="true" aria-labelledby="evidence-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2 id="evidence-modal-title">候補の根拠</h2>
+              <button className="icon-button" onClick={() => setEvidenceCandidate(null)} title="閉じる"><X size={16} /></button>
+            </div>
+            {(() => {
+              const log = sourceLogs.find((item) => item.id === evidenceCandidate.source_log_id);
+              return (
+                <div className="evidence-content">
+                  <div className="evidence-grid">
+                    <div>
+                      <span>ページタイトル</span>
+                      <strong>{log?.title ?? evidenceCandidate.product_name}</strong>
+                    </div>
+                    <div>
+                      <span>情報元URL</span>
+                      <a href={log?.url ?? evidenceCandidate.source_url} target="_blank" rel="noreferrer">{log?.url ?? evidenceCandidate.source_url}</a>
+                    </div>
+                    <div>
+                      <span>検出日</span>
+                      <strong>{formatDate(log?.detected_at ?? null)}</strong>
+                    </div>
+                    <div>
+                      <span>source_id</span>
+                      <strong>{log?.source_id ?? "-"}</strong>
+                    </div>
+                    <div>
+                      <span>検出理由</span>
+                      <strong>{evidenceCandidate.detected_reason}</strong>
+                    </div>
+                    <div>
+                      <span>検出キーワード</span>
+                      <strong>{formatDetectedKeywords(evidenceCandidate.detected_keywords)}</strong>
+                    </div>
+                    <div>
+                      <span>利益期待度</span>
+                      <strong>{evidenceCandidate.profit_expectation} / {expectationLabel(evidenceCandidate.profit_expectation)}</strong>
+                    </div>
+                  </div>
+                  <div className="evidence-raw">
+                    <span>raw_text</span>
+                    <pre>{log?.raw_text ?? "対応する取得ログが見つかりません。"}</pre>
+                  </div>
+                </div>
+              );
+            })()}
+            <div className="modal-actions">
+              <button className="secondary-button" onClick={() => setEvidenceCandidate(null)}>閉じる</button>
+              <button className="primary-button" onClick={() => { prefillProductFromCandidate(evidenceCandidate); setEvidenceCandidate(null); }}><SendToBack size={16} /> 商品登録へ</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isScrapingModalOpen && (
         <div className="modal-backdrop" role="presentation" onClick={() => setIsScrapingModalOpen(false)}>
           <div className="modal" role="dialog" aria-modal="true" aria-labelledby="scraping-modal-title" onClick={(event) => event.stopPropagation()}>
@@ -1040,47 +1131,46 @@ export default function App() {
               <div className="url-panel">
                 <div className="url-panel-header">
                   <h3 className="subheading">対象URL</h3>
-                  <label className="url-select-all">
-                    <input
-                      type="checkbox"
-                      checked={scrapingUrls.length > 0 && selectedScrapingKeys.length === scrapingUrls.length}
-                      disabled={isScrapingRunning || scrapingUrls.length === 0}
-                      onChange={toggleAllScrapingTargets}
-                    />
-                    すべて選択
-                  </label>
                 </div>
                 {scrapingUrls.length > 0 ? (
-                  <ul className="url-list">
-                    {scrapingUrls.map((source) => (
-                      <li key={source.key}>
-                        <div className="url-row">
-                          <label className="url-checkbox" title="一括Scrapingに含める">
-                            <input
-                              type="checkbox"
-                              checked={selectedScrapingKeys.includes(source.key)}
-                              disabled={isScrapingRunning}
-                              onChange={() => toggleScrapingTarget(source.key)}
-                            />
-                          </label>
-                          <div className="url-main">
-                            <strong>{source.name} / {source.kind}</strong>
-                            <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a>
+                  <>
+                    <div className="url-selection-bar">
+                      <button className="secondary-button select-all-button" disabled={isScrapingRunning || scrapingUrls.length === 0} onClick={toggleAllScrapingTargets}>
+                        {selectedScrapingKeys.length === scrapingUrls.length ? "選択解除" : "すべて選択"}
+                      </button>
+                      <span>{selectedScrapingKeys.length} / {scrapingUrls.length} 件選択中</span>
+                    </div>
+                    <ul className="url-list">
+                      {scrapingUrls.map((source) => (
+                        <li key={source.key}>
+                          <div className="url-row">
+                            <label className="url-checkbox" title="一括Scrapingに含める">
+                              <input
+                                type="checkbox"
+                                checked={selectedScrapingKeys.includes(source.key)}
+                                disabled={isScrapingRunning}
+                                onChange={() => toggleScrapingTarget(source.key)}
+                              />
+                            </label>
+                            <div className="url-main">
+                              <strong>{source.name} / {source.kind}</strong>
+                              <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a>
+                            </div>
+                            <div className="url-progress">
+                              <span className={`status-text status-${scrapingProgress[source.key]?.status ?? "実行前"}`}>{scrapingProgress[source.key]?.status ?? "実行前"}</span>
+                              <small>{scrapingProgress[source.key]?.message ?? ""}</small>
+                              <button className="secondary-button mini-button" disabled={isScrapingRunning} onClick={() => void runSingleScrapingTarget(source)}>
+                                このURLをScraping
+                              </button>
+                              <button className="secondary-button mini-button" disabled={isScrapingRunning || scrapingProgress[source.key]?.status !== "失敗"} onClick={() => void retryScrapingTarget(source)}>
+                                再実行
+                              </button>
+                            </div>
                           </div>
-                          <div className="url-progress">
-                            <span className={`status-text status-${scrapingProgress[source.key]?.status ?? "実行前"}`}>{scrapingProgress[source.key]?.status ?? "実行前"}</span>
-                            <small>{scrapingProgress[source.key]?.message ?? ""}</small>
-                            <button className="secondary-button mini-button" disabled={isScrapingRunning} onClick={() => void runSingleScrapingTarget(source)}>
-                              このURLをScraping
-                            </button>
-                            <button className="secondary-button mini-button" disabled={isScrapingRunning || scrapingProgress[source.key]?.status !== "失敗"} onClick={() => void retryScrapingTarget(source)}>
-                              再実行
-                            </button>
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
                 ) : (
                   <p className="muted-text">このカテゴリの情報源URLはまだ登録されていません。</p>
                 )}
