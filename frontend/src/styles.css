@@ -435,11 +435,39 @@ td small {
   overflow-wrap: anywhere;
 }
 
+.helper-log-heading {
+  margin-top: 24px;
+}
+
+.url-panel-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.url-select-all,
+.url-checkbox {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.url-select-all {
+  color: #435158;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.url-checkbox {
+  justify-content: center;
+}
+
 .url-row {
   align-items: center;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-columns: 24px minmax(0, 1fr) max-content;
 }
 
 .url-main {
@@ -452,6 +480,14 @@ td small {
   display: grid;
   gap: 6px;
   justify-items: start;
+  min-width: 150px;
+}
+
+.url-progress .status-text,
+.url-progress .mini-button {
+  box-sizing: border-box;
+  min-height: 32px;
+  width: 136px;
 }
 
 .url-progress span {
@@ -475,8 +511,6 @@ td small {
   font-size: 12px;
   font-weight: 700;
   justify-self: start;
-  min-height: 30px;
-  min-width: 72px;
   align-items: center;
   justify-content: center;
   padding: 0 10px;
@@ -500,6 +534,19 @@ td small {
 .status-失敗 {
   background: #fdecec;
   color: #9a2c2c;
+}
+
+.scraping-bulk-empty:disabled {
+  background: #d8dee1;
+  border-color: #d8dee1;
+  color: #7b898f;
+  cursor: not-allowed;
+}
+
+.scraping-bulk-ready {
+  background: #0f7a4f;
+  border-color: #0f7a4f;
+  color: #ffffff;
 }
 
 .muted-text {

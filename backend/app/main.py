@@ -3,12 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, SessionLocal, engine
 from .routers import collectors, keywords, notification_logs, product_candidates, products, source_logs, sources
-from .seed import seed_initial_keywords
+from .seed import seed_initial_keywords, seed_initial_sources
 
 Base.metadata.create_all(bind=engine)
 
 with SessionLocal() as db:
     seed_initial_keywords(db)
+    seed_initial_sources(db)
 
 app = FastAPI(title="Trend Product Tool API")
 

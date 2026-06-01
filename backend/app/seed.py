@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Keyword
+from .models import Keyword, Source
 
 INITIAL_KEYWORDS = [
     ("話題の商品", "話題の商品", 1),
@@ -45,6 +45,65 @@ INITIAL_KEYWORDS = [
     ("共通", "限定販売", 2),
 ]
 
+INITIAL_SOURCES = [
+    {
+        "source_name": "ポケモンカード公式ニュース",
+        "source_type": "official",
+        "url": "https://www.pokemon-card.com/info/",
+        "target_category": "ポケモンカード",
+        "priority": 1,
+        "memo": "Initial seed source: official news",
+    },
+    {
+        "source_name": "ポケモンカード公式 products",
+        "source_type": "official",
+        "url": "https://www.pokemon-card.com/products/",
+        "target_category": "ポケモンカード",
+        "priority": 1,
+        "memo": "Initial seed source: official products",
+    },
+    {
+        "source_name": "ONE PIECEカード NEWS",
+        "source_type": "official",
+        "url": "https://www.onepiece-cardgame.com/topics/",
+        "target_category": "ワンピースカード",
+        "priority": 1,
+        "memo": "Initial seed source: official news",
+    },
+    {
+        "source_name": "ガシャポン発売スケジュール",
+        "source_type": "official",
+        "url": "https://gashapon.jp/schedule/",
+        "target_category": "アニメ系ガチャ",
+        "priority": 1,
+        "memo": "Initial seed source: official schedule",
+    },
+    {
+        "source_name": "サンリオニュース",
+        "source_type": "official",
+        "url": "https://www.sanrio.co.jp/news/",
+        "target_category": "サンリオ系グッズ",
+        "priority": 1,
+        "memo": "Initial seed source: official news",
+    },
+    {
+        "source_name": "スターバックス公式プレスリリース",
+        "source_type": "official",
+        "url": "https://www.starbucks.co.jp/press_release/",
+        "target_category": "スタバ コラボ商品",
+        "priority": 1,
+        "memo": "Initial seed source: official press release",
+    },
+    {
+        "source_name": "ちいかわマーケット新着商品",
+        "source_type": "official",
+        "url": "https://chiikawa-market.jp/",
+        "target_category": "ちいかわ系グッズ",
+        "priority": 1,
+        "memo": "Initial seed source: new items",
+    },
+]
+
 
 def seed_initial_keywords(db: Session) -> int:
     inserted = 0
@@ -59,6 +118,26 @@ def seed_initial_keywords(db: Session) -> int:
                 priority=priority,
                 is_active=True,
                 memo="Initial seed keyword",
+            )
+        )
+        inserted += 1
+    db.commit()
+    return inserted
+
+
+def seed_initial_sources(db: Session) -> int:
+    inserted = 0
+    for source in INITIAL_SOURCES:
+        exists = db.scalar(select(Source).where(Source.url == source["url"]))
+        if exists is not None:
+            for field, value in source.items():
+                setattr(exists, field, value)
+            exists.is_active = True
+            continue
+        db.add(
+            Source(
+                **source,
+                is_active=True,
             )
         )
         inserted += 1

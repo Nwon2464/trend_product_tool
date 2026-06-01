@@ -52,23 +52,6 @@ type ScrapingTargetProgress = {
 type SourceLogFilter = "すべて" | "候補検出" | "登録済み" | "未登録";
 type SourceLogStatus = "候補検出" | "登録済み" | "未登録";
 
-const defaultScrapingUrls: Record<string, Array<{ name: string; url: string }>> = {
-  "すべて": [{ name: "Google ニュース", url: "https://news.google.com/" }],
-  "話題の商品": [{ name: "Google ニュース", url: "https://news.google.com/" }],
-  "ポケモンカード": [{ name: "ポケモンカードゲーム公式サイト", url: "https://www.pokemon-card.com/" }],
-  "ワンピースカード": [{ name: "ONE PIECEカードゲーム公式サイト", url: "https://www.onepiece-cardgame.com/" }],
-  "アニメ系ガチャ": [{ name: "ガシャポン公式", url: "https://gashapon.jp/" }],
-  "ボンボンドロップシール": [{ name: "文具ニュース検索", url: "https://www.google.com/search?q=%E3%83%9C%E3%83%B3%E3%83%9C%E3%83%B3%E3%83%89%E3%83%AD%E3%83%83%E3%83%97%E3%82%B7%E3%83%BC%E3%83%AB" }],
-  "ちいかわ系グッズ": [{ name: "ちいかわ公式", url: "https://www.chiikawa-info.jp/" }],
-  "サンリオ系グッズ": [{ name: "サンリオ公式", url: "https://www.sanrio.co.jp/" }],
-  "ポケモン系グッズ": [{ name: "ポケモンセンターオンライン", url: "https://www.pokemoncenter-online.com/" }],
-  "スタバ コラボ商品": [{ name: "スターバックス公式", url: "https://www.starbucks.co.jp/" }],
-  "スタバ 季節限定商品": [{ name: "スターバックス公式", url: "https://www.starbucks.co.jp/" }],
-  "アパレルコラボ商品": [{ name: "ユニクロ公式", url: "https://www.uniqlo.com/jp/ja/" }],
-  "有名メーカーのお菓子の廃盤商品": [{ name: "食品産業新聞社", url: "https://www.ssnp.co.jp/" }],
-  "共通": [{ name: "Google ニュース", url: "https://news.google.com/" }],
-};
-
 const emptyProduct: ProductInput = {
   category: "ポケモンカード",
   product_name: "",
@@ -145,6 +128,19 @@ function expectationLabel(score: number) {
   return "保留";
 }
 
+function formatDetectedKeywords(value: string | null) {
+  if (!value) return "-";
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.join(", ");
+    }
+  } catch {
+    // Keep the raw detector output when it is not JSON.
+  }
+  return value;
+}
+
 function sortSourcesByNewest(items: Source[]) {
   return [...items].sort((a, b) => {
     const createdDiff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -194,6 +190,7 @@ export default function App() {
   });
   const [isScrapingRunning, setIsScrapingRunning] = useState(false);
   const [scrapingProgress, setScrapingProgress] = useState<Record<string, ScrapingTargetProgress>>({});
+  const [selectedScrapingKeys, setSelectedScrapingKeys] = useState<string[]>([]);
   const [sourceLogFilter, setSourceLogFilter] = useState<SourceLogFilter>("すべて");
 
   const categories = useMemo(() => {
@@ -228,12 +225,19 @@ export default function App() {
     });
   }, [candidatesBySourceLogId, productSourceUrls, sourceLogFilter, sourceLogs]);
 
+  const sortedProductCandidates = useMemo(() => (
+    [...productCandidates].sort((a, b) => {
+      const scoreDiff = b.profit_expectation - a.profit_expectation;
+      return scoreDiff || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    })
+  ), [productCandidates]);
+
   const deletableUnregisteredLogs = useMemo(() => (
     filteredSourceLogs.filter((log) => getSourceLogStatus(log, productSourceUrls, candidatesBySourceLogId) === "未登録")
   ), [candidatesBySourceLogId, filteredSourceLogs, productSourceUrls]);
 
   const scrapingUrls = useMemo(() => {
-    const registeredSources = sortSourcesByNewest(sources)
+    return sortSourcesByNewest(sources)
       .filter((source) => scrapingPrep.category === "すべて" || source.target_category === scrapingPrep.category)
       .map((source) => ({
         key: `registered-${source.id}`,
@@ -243,27 +247,11 @@ export default function App() {
         category: source.target_category,
         kind: "登録済み",
       }));
-    const mockUrlSources = scrapingPrep.category === "すべて"
-      ? Object.entries(defaultScrapingUrls).flatMap(([category, urls]) => (
-          category === "すべて" ? [] : urls.map((source) => ({
-            ...source,
-            category,
-          }))
-        ))
-      : (defaultScrapingUrls[scrapingPrep.category] ?? defaultScrapingUrls["共通"]).map((source) => ({
-          ...source,
-          category: scrapingPrep.category,
-        }));
-    const categoryUrls = mockUrlSources.map((source) => ({
-      key: `mock-${source.category}-${source.url}`,
-      id: source.url,
-      name: `${source.category} / ${source.name}`,
-      url: source.url,
-      category: source.category,
-      kind: "Mock URL",
-    }));
-    return [...registeredSources, ...categoryUrls];
   }, [scrapingPrep.category, sources]);
+
+  const selectedScrapingTargets = useMemo(() => (
+    scrapingUrls.filter((source) => selectedScrapingKeys.includes(source.key))
+  ), [scrapingUrls, selectedScrapingKeys]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -315,6 +303,12 @@ export default function App() {
       document.body.style.overflow = previousOverflow;
     };
   }, [isScrapingModalOpen]);
+
+  useEffect(() => {
+    setSelectedScrapingKeys((current) => (
+      current.filter((key) => scrapingUrls.some((source) => source.key === key))
+    ));
+  }, [scrapingUrls]);
 
   async function submitProduct(event: FormEvent) {
     event.preventDefault();
@@ -459,32 +453,66 @@ export default function App() {
   }
 
   async function startScrapingFromPrep() {
-    const target = scrapingUrls[0];
-    if (!target) {
-      setError("対象URLがありません");
+    const targets = selectedScrapingTargets;
+    if (targets.length === 0) {
       return;
     }
 
     setError("");
     setMessage("");
     setIsScrapingRunning(true);
-    setScrapingProgress({
-      [target.key]: { status: "待機中", message: "" },
-    });
+    setScrapingProgress((current) => ({
+      ...current,
+      ...Object.fromEntries(targets.map((target) => [target.key, { status: "待機中" as const, message: "" }])),
+    }));
+    let successCount = 0;
+    let failureCount = 0;
+    try {
+      for (const target of targets) {
+        try {
+          await runScrapingTarget(target);
+          successCount += 1;
+        } catch {
+          failureCount += 1;
+        }
+      }
+      await loadAll();
+      setActiveTab("collection");
+      setMessage(`一括Scraping完了: ${successCount}件完了 / ${failureCount}件失敗`);
+      if (failureCount > 0) {
+        setError("一部URLのScrapingに失敗しました");
+      }
+    } finally {
+      setIsScrapingRunning(false);
+    }
+  }
+
+  async function runSingleScrapingTarget(target: (typeof scrapingUrls)[number]) {
+    setError("");
+    setMessage("");
+    setIsScrapingRunning(true);
     try {
       const resultMessage = await runScrapingTarget(target);
       await loadAll();
       setActiveTab("collection");
-      setMessage(`スクレイピング完了: ${resultMessage}`);
+      setMessage(`Scraping完了: ${resultMessage}`);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "スクレイピング開始に失敗しました";
-      setScrapingProgress({
-        [target.key]: { status: "失敗", message: errorMessage },
-      });
-      setError(errorMessage);
+      setError(err instanceof Error ? err.message : "Scrapingに失敗しました");
     } finally {
       setIsScrapingRunning(false);
     }
+  }
+
+  function toggleScrapingTarget(key: string) {
+    setSelectedScrapingKeys((current) => (
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    ));
+  }
+
+  function toggleAllScrapingTargets() {
+    setSelectedScrapingKeys((current) => (
+      current.length === scrapingUrls.length ? [] : scrapingUrls.map((source) => source.key)
+    ));
   }
 
   async function retryScrapingTarget(target: (typeof scrapingUrls)[number]) {
@@ -574,6 +602,34 @@ export default function App() {
       ].filter(Boolean).join("\n"),
     });
     setMessage(candidate ? "商品候補の内容を商品登録フォームに反映しました" : "取得ログの内容を商品登録フォームに反映しました");
+    setActiveTab("add-product");
+  }
+
+  function prefillProductFromCandidate(candidate: ProductCandidate) {
+    const log = sourceLogs.find((item) => item.id === candidate.source_log_id);
+    setEditingProductId(null);
+    setProductForm({
+      ...emptyProduct,
+      category: candidate.category,
+      product_name: candidate.product_name,
+      price: candidate.price === null ? "" : String(candidate.price),
+      release_date: candidate.release_date ?? "",
+      sales_store: candidate.sales_store ?? "",
+      status: "不明",
+      source_name: candidate.sales_store ?? "",
+      source_url: candidate.source_url,
+      trend_score: candidate.profit_expectation,
+      memo: [
+        "商品候補から作成",
+        `候補ID: ${candidate.id}`,
+        `取得ログID: ${candidate.source_log_id}`,
+        `検出理由: ${candidate.detected_reason}`,
+        `検出キーワード: ${formatDetectedKeywords(candidate.detected_keywords)}`,
+        `利益期待度: ${candidate.profit_expectation} / ${expectationLabel(candidate.profit_expectation)}`,
+        log?.raw_text ? `取得内容: ${log.raw_text}` : "",
+      ].filter(Boolean).join("\n"),
+    });
+    setMessage("商品候補の内容を商品登録フォームに反映しました");
     setActiveTab("add-product");
   }
 
@@ -803,7 +859,7 @@ export default function App() {
           <section className="panel">
             <div className="section-heading">
               <h2>情報収集</h2>
-              <span>取得ログ {filteredSourceLogs.length} / {sourceLogs.length}件</span>
+              <span>商品候補 {sortedProductCandidates.length}件 / 補助ログ {filteredSourceLogs.length}件</span>
             </div>
             <div className="toolbar-row">
               <button className="primary-button" onClick={() => {
@@ -827,7 +883,25 @@ export default function App() {
                 </label>
               </div>
             </div>
-            <h3 className="subheading">取得ログ</h3>
+            <h3 className="subheading">商品候補</h3>
+            <SimpleTable
+              headers={["商品名候補", "カテゴリ", "価格", "発売日", "販売元", "利益期待度", "検出理由", "検出キーワード", "情報元URL", "操作"]}
+              rows={sortedProductCandidates.map((candidate) => [
+                candidate.product_name,
+                candidate.category,
+                candidate.price === null ? "-" : candidate.price.toLocaleString("ja-JP"),
+                formatDate(candidate.release_date),
+                candidate.sales_store ?? "-",
+                <span className={`score score-${scoreClass(candidate.profit_expectation)}`} key={candidate.id}>{candidate.profit_expectation} / {expectationLabel(candidate.profit_expectation)}</span>,
+                candidate.detected_reason,
+                formatDetectedKeywords(candidate.detected_keywords),
+                <a href={candidate.source_url} target="_blank" rel="noreferrer" key={candidate.id}>{candidate.source_url}</a>,
+                <div className="actions" key={candidate.id}>
+                  <button className="secondary-button" onClick={() => prefillProductFromCandidate(candidate)}><SendToBack size={16} /> 商品登録</button>
+                </div>,
+              ])}
+            />
+            <h3 className="subheading helper-log-heading">補助ログ</h3>
             <SimpleTable
               headers={["ID", "タイトル", "リンク", "状態", "感知理由", "利益期待度", "検出日", "操作"]}
               rows={filteredSourceLogs.map((log) => {
@@ -964,12 +1038,31 @@ export default function App() {
                 <input value={scrapingPrep.sourceName} onChange={(event) => setScrapingPrep({ ...scrapingPrep, sourceName: event.target.value })} />
               </label>
               <div className="url-panel">
-                <h3 className="subheading">対象URL</h3>
+                <div className="url-panel-header">
+                  <h3 className="subheading">対象URL</h3>
+                  <label className="url-select-all">
+                    <input
+                      type="checkbox"
+                      checked={scrapingUrls.length > 0 && selectedScrapingKeys.length === scrapingUrls.length}
+                      disabled={isScrapingRunning || scrapingUrls.length === 0}
+                      onChange={toggleAllScrapingTargets}
+                    />
+                    すべて選択
+                  </label>
+                </div>
                 {scrapingUrls.length > 0 ? (
                   <ul className="url-list">
                     {scrapingUrls.map((source) => (
                       <li key={source.key}>
                         <div className="url-row">
+                          <label className="url-checkbox" title="一括Scrapingに含める">
+                            <input
+                              type="checkbox"
+                              checked={selectedScrapingKeys.includes(source.key)}
+                              disabled={isScrapingRunning}
+                              onChange={() => toggleScrapingTarget(source.key)}
+                            />
+                          </label>
                           <div className="url-main">
                             <strong>{source.name} / {source.kind}</strong>
                             <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a>
@@ -977,6 +1070,9 @@ export default function App() {
                           <div className="url-progress">
                             <span className={`status-text status-${scrapingProgress[source.key]?.status ?? "実行前"}`}>{scrapingProgress[source.key]?.status ?? "実行前"}</span>
                             <small>{scrapingProgress[source.key]?.message ?? ""}</small>
+                            <button className="secondary-button mini-button" disabled={isScrapingRunning} onClick={() => void runSingleScrapingTarget(source)}>
+                              このURLをScraping
+                            </button>
                             <button className="secondary-button mini-button" disabled={isScrapingRunning || scrapingProgress[source.key]?.status !== "失敗"} onClick={() => void retryScrapingTarget(source)}>
                               再実行
                             </button>
@@ -991,7 +1087,13 @@ export default function App() {
               </div>
             </div>
             <div className="modal-actions">
-              <button className="primary-button" onClick={() => void startScrapingFromPrep()} disabled={isScrapingRunning}><Download size={16} /> スクレイピング開始</button>
+              <button
+                className={`primary-button ${selectedScrapingTargets.length > 0 ? "scraping-bulk-ready" : "scraping-bulk-empty"}`}
+                onClick={() => void startScrapingFromPrep()}
+                disabled={isScrapingRunning || selectedScrapingTargets.length === 0}
+              >
+                <Download size={16} /> 選択したURLを一括Scraping
+              </button>
               <button className="secondary-button" onClick={() => setIsScrapingModalOpen(false)} disabled={isScrapingRunning}>閉じる</button>
             </div>
           </div>
