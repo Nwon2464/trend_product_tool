@@ -100,6 +100,31 @@ class SourceLog(Base):
     )
 
 
+class CollectionRun(Base):
+    __tablename__ = "collection_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    source_id: Mapped[int] = mapped_column(
+        ForeignKey("sources.id"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="running", index=True)
+    selected_statuses: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fetched_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 class ProductCandidate(Base):
     __tablename__ = "product_candidates"
 

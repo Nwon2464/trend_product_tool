@@ -15,6 +15,18 @@ DETECTION_RULES = [
     ("抽選販売", 18, ["抽選", "抽選販売", "抽選受付", "抽選申込"]),
 ]
 
+STATUS_KEYWORD_GROUPS = {
+    "予約開始": ["予約開始", "予約受付", "予約販売", "先行予約", "抽選予約", "予約"],
+    "発売予定": ["販売予定", "発売予定", "新発売", "発売日", "発売決定", "登場予定"],
+    "発売中": ["発売中", "販売中", "在庫あり"],
+    "再販": ["再販売", "再販", "再入荷", "再登場", "追加販売"],
+    "入荷": ["入荷", "入荷予定", "在庫あり", "在庫復活"],
+    "抽選販売": ["抽選", "抽選販売", "抽選受付", "抽選申込"],
+    "限定": ["限定", "数量限定", "期間限定", "店舗限定", "オンライン限定", "受注限定"],
+    "コラボ": ["コラボ", "コラボレーション", "タイアップ", "別注"],
+    "廃盤": ["廃盤", "終売", "販売終了", "生産終了", "販売休止"],
+}
+
 EXCLUDE_KEYWORDS = [
     "大会",
     "ルール",
@@ -121,11 +133,16 @@ def build_candidate_from_source_log(
     *,
     source: models.Source,
     source_log: models.SourceLog,
+    selected_statuses: list[str] | None = None,
 ) -> schemas.ProductCandidateCreate | None:
     haystack = f"{source_log.title}\n{source_log.raw_text or ''}"
     if has_excluded_keyword(haystack):
         return None
     if is_noisy_title(source_log.title):
+        return None
+
+    selected_keywords = get_keywords_for_statuses(selected_statuses)
+    if selected_keywords and not get_matched_keywords(haystack, selected_keywords):
         return None
 
     matched: list[str] = []
@@ -257,6 +274,19 @@ def has_product_opportunity_signal(
     return has_product_page_signal(title=title, raw_text=raw_text, url=url, source=source)
 
 
+def has_selected_status_signal(
+    *,
+    title: str,
+    raw_text: str | None,
+    selected_statuses: list[str] | None,
+) -> bool:
+    selected_keywords = get_keywords_for_statuses(selected_statuses)
+    if not selected_keywords:
+        return False
+    haystack = f"{title}\n{raw_text or ''}"
+    return bool(get_matched_keywords(haystack, selected_keywords))
+
+
 def has_product_page_signal(
     *,
     title: str,
@@ -278,6 +308,21 @@ def get_detection_keywords() -> list[str]:
     for _, _, rule_keywords in DETECTION_RULES:
         keywords.extend(rule_keywords)
     return keywords
+
+
+def get_keywords_for_statuses(selected_statuses: list[str] | None) -> list[str]:
+    if not selected_statuses:
+        return []
+    keywords: list[str] = []
+    for status in selected_statuses:
+        if status in {"すべて", "全て", "all", ""}:
+            continue
+        keywords.extend(STATUS_KEYWORD_GROUPS.get(status, [status]))
+    return sorted(set(keywords))
+
+
+def get_matched_keywords(text: str, keywords: list[str]) -> list[str]:
+    return [keyword for keyword in keywords if keyword and keyword in text]
 
 
 def clean_product_name(title: str) -> str:

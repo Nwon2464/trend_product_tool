@@ -99,6 +99,7 @@ export type ProductCandidate = {
 };
 
 export type CollectorRunResponse = {
+  collection_run_id: number | null;
   source_id: number;
   fetched_url: string;
   created_count: number;
@@ -106,6 +107,7 @@ export type CollectorRunResponse = {
   skipped_reason: string | null;
   skipped_details: string[];
   logs: SourceLog[];
+  candidates: ProductCandidate[];
 };
 
 export type NotificationLog = {

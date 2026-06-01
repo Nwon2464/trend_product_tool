@@ -25,6 +25,7 @@ def run_collector(
             max_items=request.max_items,
             respect_robots=request.respect_robots,
             minimum_interval_seconds=request.minimum_interval_seconds,
+            selected_statuses=request.selected_statuses,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Collector failed: {exc}") from exc

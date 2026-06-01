@@ -449,7 +449,7 @@ export default function App() {
       } else if (result.skipped_reason === "no_usable_items") {
         setMessage("保存できる対象URLが見つかりませんでした");
       } else {
-        setMessage(`取得完了: ${result.created_count}件作成 / ${result.skipped_count}件重複`);
+        setMessage(`取得完了: ${result.candidates.length}件候補作成 / ${result.created_count}件ログ保存 / ${result.skipped_count}件スキップ`);
       }
       await loadAll();
       setActiveTab("collection");
@@ -519,14 +519,15 @@ export default function App() {
             is_active: true,
             memo: `スクレイピング準備から追加 / ステータス: ${scrapingPrep.status}`,
           })).id;
-      const result = await api.runCollector(sourceId);
+      const selectedStatuses = scrapingPrep.status === "すべて" ? undefined : [scrapingPrep.status];
+      const result = await api.runCollector(sourceId, selectedStatuses);
       const resultMessage = result.skipped_reason === "minimum_interval"
         ? "取得間隔でスキップ"
         : result.skipped_reason === "robots_disallow"
           ? "robots.txt でスキップ"
           : result.skipped_reason === "no_usable_items"
             ? "保存対象なし"
-            : `${result.created_count}件作成 / ${result.skipped_count}件重複`;
+            : `${result.candidates.length}件候補作成 / ${result.created_count}件ログ保存 / ${result.skipped_count}件スキップ`;
       setScrapingProgress((current) => ({
         ...current,
         [target.key]: { status: "完了", message: resultMessage },

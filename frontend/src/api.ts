@@ -180,7 +180,7 @@ export const api = {
     request<void>(`/source-logs/${id}`, {
       method: "DELETE",
     }),
-  runCollector: (sourceId: number) =>
+  runCollector: (sourceId: number, selectedStatuses?: string[]) =>
     request<CollectorRunResponse>("/collectors/run", {
       method: "POST",
       body: JSON.stringify({
@@ -188,6 +188,7 @@ export const api = {
         max_items: 10,
         respect_robots: true,
         minimum_interval_seconds: 300,
+        selected_statuses: selectedStatuses?.length ? selectedStatuses : null,
       }),
     }),
   listProductCandidates: () => request<ProductCandidate[]>("/product-candidates"),

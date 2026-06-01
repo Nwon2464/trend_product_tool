@@ -247,6 +247,50 @@ def delete_source_log(db: Session, db_source_log: models.SourceLog) -> None:
     db.commit()
 
 
+def create_collection_run(
+    db: Session,
+    *,
+    source_id: int,
+    fetched_url: str,
+    selected_statuses: str | None,
+    started_at,
+) -> models.CollectionRun:
+    db_collection_run = models.CollectionRun(
+        source_id=source_id,
+        fetched_url=fetched_url,
+        selected_statuses=selected_statuses,
+        started_at=started_at,
+        status="running",
+    )
+    db.add(db_collection_run)
+    db.commit()
+    db.refresh(db_collection_run)
+    return db_collection_run
+
+
+def finish_collection_run(
+    db: Session,
+    db_collection_run: models.CollectionRun,
+    *,
+    status: str,
+    finished_at,
+    created_count: int = 0,
+    skipped_count: int = 0,
+    skipped_reason: str | None = None,
+    error_message: str | None = None,
+) -> models.CollectionRun:
+    db_collection_run.status = status
+    db_collection_run.finished_at = finished_at
+    db_collection_run.created_count = created_count
+    db_collection_run.skipped_count = skipped_count
+    db_collection_run.skipped_reason = skipped_reason
+    db_collection_run.error_message = error_message
+    db.add(db_collection_run)
+    db.commit()
+    db.refresh(db_collection_run)
+    return db_collection_run
+
+
 def list_product_candidates(
     db: Session,
     *,

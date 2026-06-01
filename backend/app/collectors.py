@@ -15,6 +15,7 @@ from . import candidate_detector, crud, models, schemas
 USER_AGENT = "TrendProductToolMVP/0.1"
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_RAW_TEXT_CHARS = 2_000
+MAX_DETAIL_FETCHES = 30
 SKIP_LINK_TITLES = {
     "more",
     "read more",
@@ -24,6 +25,18 @@ SKIP_LINK_TITLES = {
     "詳細",
     "もっと見る",
     "続きを読む",
+}
+SKIP_DETAIL_URL_PARTS = {
+    "youtube.com",
+    "twitter.com",
+    "x.com",
+    "/contact",
+    "/policy",
+    "/privacy",
+    "/sitemap",
+    "/link.html",
+    "/login",
+    "/register",
 }
 
 
@@ -117,6 +130,39 @@ class LinkParser(HTMLParser):
             self._current_text = []
 
 
+class DetailPageParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.title = ""
+        self.text_parts: list[str] = []
+        self._in_title = False
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "title":
+            self._in_title = True
+        if tag in {"script", "style", "noscript", "svg"}:
+            self._skip_depth += 1
+
+    def handle_data(self, data: str) -> None:
+        if self._in_title:
+            self.title += data
+        if self._skip_depth == 0:
+            clean_data = normalize_text(data)
+            if clean_data:
+                self.text_parts.append(clean_data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "title":
+            self._in_title = False
+        if tag in {"script", "style", "noscript", "svg"} and self._skip_depth > 0:
+            self._skip_depth -= 1
+
+    @property
+    def body_text(self) -> str:
+        return normalize_text(" ".join(self.text_parts))
+
+
 def run_collector(
     db: Session,
     *,
@@ -124,13 +170,29 @@ def run_collector(
     max_items: int,
     respect_robots: bool,
     minimum_interval_seconds: int,
+    selected_statuses: list[str] | None = None,
 ) -> schemas.CollectorRunResponse:
     now = datetime.now(timezone.utc)
+    collection_run = crud.create_collection_run(
+        db,
+        source_id=source.id,
+        fetched_url=source.url,
+        selected_statuses=json.dumps(selected_statuses or [], ensure_ascii=False),
+        started_at=now,
+    )
     latest_log = crud.get_latest_source_log(db, source.id)
     if latest_log is not None and minimum_interval_seconds > 0:
         elapsed = (now.replace(tzinfo=None) - latest_log.detected_at.replace(tzinfo=None)).total_seconds()
         if elapsed < minimum_interval_seconds:
+            crud.finish_collection_run(
+                db,
+                collection_run,
+                status="skipped",
+                finished_at=datetime.now(timezone.utc),
+                skipped_reason="minimum_interval",
+            )
             return schemas.CollectorRunResponse(
+                collection_run_id=collection_run.id,
                 source_id=source.id,
                 fetched_url=source.url,
                 created_count=0,
@@ -141,7 +203,15 @@ def run_collector(
             )
 
     if respect_robots and not is_allowed_by_robots(source.url):
+        crud.finish_collection_run(
+            db,
+            collection_run,
+            status="skipped",
+            finished_at=datetime.now(timezone.utc),
+            skipped_reason="robots_disallow",
+        )
         return schemas.CollectorRunResponse(
+            collection_run_id=collection_run.id,
             source_id=source.id,
             fetched_url=source.url,
             created_count=0,
@@ -151,65 +221,115 @@ def run_collector(
             logs=[],
         )
 
-    content, content_type = fetch_url(source.url)
-    parsed_items = parse_content(content, content_type, source.url)
-    items = dedupe_collected_items(parsed_items)
-    if not items:
+    try:
+        content, content_type = fetch_url(source.url)
+        parsed_items = parse_content(content, content_type, source.url)
+        items = dedupe_collected_items(parsed_items)
+        if is_html_content(content_type, source.url):
+            items = list_to_detail_items(
+                items,
+                source_url=source.url,
+                respect_robots=respect_robots,
+                max_detail_fetches=max(MAX_DETAIL_FETCHES, max_items * 3),
+            )
+        if not items:
+            crud.finish_collection_run(
+                db,
+                collection_run,
+                status="skipped",
+                finished_at=datetime.now(timezone.utc),
+                skipped_reason="no_usable_items",
+            )
+            return schemas.CollectorRunResponse(
+                collection_run_id=collection_run.id,
+                source_id=source.id,
+                fetched_url=source.url,
+                created_count=0,
+                skipped_count=0,
+                skipped_reason="no_usable_items",
+                skipped_details=["no_usable_items"],
+                logs=[],
+            )
+
+        created_logs: list[models.SourceLog] = []
+        created_candidates: list[models.ProductCandidate] = []
+        skipped_count = 0
+        skipped_details: list[str] = []
+        for item in items:
+            if len(created_logs) >= max_items or len(created_candidates) >= max_items:
+                break
+            if selected_statuses:
+                has_signal = candidate_detector.has_selected_status_signal(
+                    title=item.title,
+                    raw_text=item.raw_text,
+                    selected_statuses=selected_statuses,
+                )
+            else:
+                has_signal = candidate_detector.has_product_opportunity_signal(
+                    title=item.title,
+                    raw_text=item.raw_text,
+                    url=item.url,
+                    source=source,
+                )
+            if not has_signal:
+                skipped_count += 1
+                skipped_details.append(f"not_selected_opportunity: {item.url}")
+                continue
+            if crud.get_source_log_by_url(db, source_id=source.id, url=item.url) is not None:
+                skipped_count += 1
+                skipped_details.append(f"duplicate_url: {item.url}")
+                continue
+            if crud.get_product_candidate_by_source_url(db, item.url) is not None:
+                skipped_count += 1
+                skipped_details.append(f"duplicate_candidate_url: {item.url}")
+                continue
+
+            created_log = crud.create_source_log(
+                db,
+                schemas.SourceLogCreate(
+                    source_id=source.id,
+                    title=item.title,
+                    url=item.url,
+                    raw_text=item.raw_text,
+                    detected_at=now,
+                ),
+            )
+            created_logs.append(created_log)
+            candidate = candidate_detector.build_candidate_from_source_log(
+                source=source,
+                source_log=created_log,
+                selected_statuses=selected_statuses,
+            )
+            if candidate and crud.get_product_candidate_by_source_url(db, candidate.source_url) is None:
+                created_candidates.append(crud.create_product_candidate(db, candidate))
+
+        crud.finish_collection_run(
+            db,
+            collection_run,
+            status="completed",
+            finished_at=datetime.now(timezone.utc),
+            created_count=len(created_logs),
+            skipped_count=skipped_count,
+        )
         return schemas.CollectorRunResponse(
+            collection_run_id=collection_run.id,
             source_id=source.id,
             fetched_url=source.url,
-            created_count=0,
-            skipped_count=0,
-            skipped_reason="no_usable_items",
-            skipped_details=["no_usable_items"],
-            logs=[],
+            created_count=len(created_logs),
+            skipped_count=skipped_count,
+            skipped_details=skipped_details[:20],
+            logs=created_logs,
+            candidates=created_candidates,
         )
-
-    created_logs: list[models.SourceLog] = []
-    skipped_count = 0
-    skipped_details: list[str] = []
-    for item in items:
-        if len(created_logs) >= max_items:
-            break
-        if not candidate_detector.has_product_opportunity_signal(
-            title=item.title,
-            raw_text=item.raw_text,
-            url=item.url,
-            source=source,
-        ):
-            skipped_count += 1
-            skipped_details.append(f"not_product_opportunity: {item.url}")
-            continue
-        if crud.get_source_log_by_url(db, source_id=source.id, url=item.url) is not None:
-            skipped_count += 1
-            skipped_details.append(f"duplicate_url: {item.url}")
-            continue
-        created_log = crud.create_source_log(
+    except Exception as exc:
+        crud.finish_collection_run(
             db,
-            schemas.SourceLogCreate(
-                source_id=source.id,
-                title=item.title,
-                url=item.url,
-                raw_text=item.raw_text,
-                detected_at=now,
-            ),
+            collection_run,
+            status="failed",
+            finished_at=datetime.now(timezone.utc),
+            error_message=str(exc),
         )
-        created_logs.append(created_log)
-        candidate = candidate_detector.build_candidate_from_source_log(
-            source=source,
-            source_log=created_log,
-        )
-        if candidate and crud.get_product_candidate_by_source_url(db, candidate.source_url) is None:
-            crud.create_product_candidate(db, candidate)
-
-    return schemas.CollectorRunResponse(
-        source_id=source.id,
-        fetched_url=source.url,
-        created_count=len(created_logs),
-        skipped_count=skipped_count,
-        skipped_details=skipped_details[:20],
-        logs=created_logs,
-    )
+        raise
 
 
 def fetch_url(url: str) -> tuple[bytes, str]:
@@ -217,6 +337,65 @@ def fetch_url(url: str) -> tuple[bytes, str]:
     with urlopen(request, timeout=10) as response:
         content_type = response.headers.get("Content-Type", "")
         return response.read(MAX_RESPONSE_BYTES), content_type
+
+
+def is_html_content(content_type: str, source_url: str) -> bool:
+    parsed = urlparse(source_url)
+    return "html" in content_type or parsed.path.endswith(("/", ".html", ".htm", ".php")) or not parsed.path
+
+
+def list_to_detail_items(
+    items: list[CollectedItem],
+    *,
+    source_url: str,
+    respect_robots: bool,
+    max_detail_fetches: int,
+) -> list[CollectedItem]:
+    detail_items: list[CollectedItem] = []
+    for item in items:
+        if len(detail_items) >= max_detail_fetches:
+            break
+        if not is_detail_link_candidate(item, source_url):
+            continue
+        if respect_robots and not is_allowed_by_robots(item.url):
+            continue
+        detail_item = fetch_detail_item(item)
+        if detail_item:
+            detail_items.append(detail_item)
+    return detail_items or items
+
+
+def is_detail_link_candidate(item: CollectedItem, source_url: str) -> bool:
+    item_url = item.url.lower()
+    if any(part.lower() in item_url for part in SKIP_DETAIL_URL_PARTS):
+        return False
+    if candidate_detector.has_excluded_keyword(item.title) or candidate_detector.is_noisy_title(item.title):
+        return False
+
+    parsed_item = urlparse(item.url)
+    parsed_source = urlparse(source_url)
+    same_site = parsed_item.netloc == parsed_source.netloc
+    path_has_hint = any(hint in parsed_item.path for hint in candidate_detector.PRODUCT_URL_HINTS)
+    title_has_signal = any(keyword in item.title for keyword in candidate_detector.PRODUCT_SIGNAL_KEYWORDS)
+    selected_site = parsed_item.netloc.endswith("pokemoncenter-online.com")
+    return same_site or selected_site or path_has_hint or title_has_signal
+
+
+def fetch_detail_item(item: CollectedItem) -> CollectedItem | None:
+    content, content_type = fetch_url(item.url)
+    if "html" not in content_type and not item.url.endswith((".html", ".htm", ".php", "/")):
+        return item
+    text = content.decode("utf-8", errors="replace")
+    parser = DetailPageParser()
+    parser.feed(text)
+    title = normalize_text(parser.title) or item.title
+    body_text = parser.body_text or item.raw_text or title
+    return build_collected_item(
+        title=title,
+        url=item.url,
+        base_url=item.url,
+        raw_text=body_text,
+    )
 
 
 def is_allowed_by_robots(url: str) -> bool:

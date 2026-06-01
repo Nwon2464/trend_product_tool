@@ -195,9 +195,11 @@ class CollectorRunRequest(BaseModel):
     max_items: int = Field(default=10, ge=1, le=30)
     respect_robots: bool = True
     minimum_interval_seconds: int = Field(default=300, ge=0, le=86400)
+    selected_statuses: list[str] | None = None
 
 
 class CollectorRunResponse(BaseModel):
+    collection_run_id: int | None = None
     source_id: int
     fetched_url: str
     created_count: int
@@ -205,6 +207,7 @@ class CollectorRunResponse(BaseModel):
     skipped_reason: str | None = None
     skipped_details: list[str] = Field(default_factory=list)
     logs: list[SourceLogRead]
+    candidates: list["ProductCandidateRead"] = Field(default_factory=list)
 
 
 class ProductCandidateBase(BaseModel):
