@@ -1,5 +1,6 @@
 import json
 import re
+from dataclasses import dataclass
 from datetime import date
 
 from . import models, schemas
@@ -143,6 +144,43 @@ TITLE_CLEANUP_PATTERNS = [
     r"のお知らせ",
 ]
 
+DATE_CONTEXT_KEYWORDS = [
+    "発売日",
+    "発売予定日",
+    "発売開始日",
+    "販売日",
+    "販売予定日",
+    "販売開始日",
+    "予約開始日",
+    "予約受付開始",
+    "発売スタート",
+    "販売スタート",
+    "から発売",
+    "より発売",
+    "から販売",
+    "より販売",
+]
+
+NON_RELEASE_DATE_CONTEXT_KEYWORDS = [
+    "記事公開日",
+    "公開日",
+    "投稿日",
+    "更新日",
+    "掲載日",
+    "ニュースの日付",
+]
+
+FULL_DATE_PATTERN = re.compile(r"(20[0-9]{2})[年/-]\s*([0-9]{1,2})[月/-]\s*([0-9]{1,2})")
+MONTH_DAY_PATTERN = re.compile(r"([0-9]{1,2})\s*月\s*([0-9]{1,2})\s*日(?:\s*[（(][月火水木金土日][）)])?")
+
+
+@dataclass(frozen=True)
+class ReleaseDateMatch:
+    value: date
+    reason: str
+    score: int
+    position: int
+
 
 def build_candidate_from_source_log(
     *,
@@ -205,7 +243,7 @@ def build_candidate_from_source_log(
         return None
 
     price = extract_price(haystack)
-    release_date = extract_release_date(haystack)
+    release_date, release_date_reason = extract_release_date_with_reason(haystack)
     sales_store = source.source_name
     product_name = clean_product_name(source_log.title)
     candidate_category = db_keyword_matches[0].category if db_keyword_matches else source.target_category
@@ -215,7 +253,7 @@ def build_candidate_from_source_log(
         reasons.append("価格情報あり")
     if release_date is not None:
         score += 6
-        reasons.append("日付情報あり")
+        reasons.append(release_date_reason)
     if source.source_type == "official":
         score += 12
         reasons.append("公式情報源")
@@ -261,12 +299,55 @@ def extract_price(text: str) -> int | None:
 
 
 def extract_release_date(text: str) -> date | None:
-    year_match = re.search(r"(20[0-9]{2})[年/-]\s*([0-9]{1,2})[月/-]\s*([0-9]{1,2})", text)
+    release_date, _reason = extract_release_date_with_reason(text)
+    return release_date
+
+
+def extract_release_date_with_reason(text: str) -> tuple[date | None, str]:
+    context_match = find_contextual_release_date(text)
+    if context_match:
+        return context_match.value, context_match.reason
+
+    fallback = find_general_release_date(text)
+    if fallback:
+        return fallback, "一般日付から抽出"
+
+    return None, ""
+
+
+def find_contextual_release_date(text: str) -> ReleaseDateMatch | None:
+    matches: list[ReleaseDateMatch] = []
+    base_year = infer_year_from_text(text)
+
+    for match in FULL_DATE_PATTERN.finditer(text):
+        year, month, day = (int(value) for value in match.groups())
+        candidate = build_date(year, month, day)
+        if candidate:
+            context_score = score_release_date_context(text, match.start(), match.end())
+            if context_score > 0:
+                matches.append(ReleaseDateMatch(candidate, "発売日文脈から日付抽出", context_score, match.start()))
+
+    for match in MONTH_DAY_PATTERN.finditer(text):
+        month, day = (int(value) for value in match.groups())
+        candidate = build_date(base_year, month, day)
+        if candidate:
+            context_score = score_release_date_context(text, match.start(), match.end())
+            if context_score > 0:
+                matches.append(ReleaseDateMatch(candidate, "発売日文脈から日付抽出", context_score, match.start()))
+
+    if not matches:
+        return None
+
+    return sorted(matches, key=lambda item: (-item.score, item.position))[0]
+
+
+def find_general_release_date(text: str) -> date | None:
+    year_match = FULL_DATE_PATTERN.search(text)
     if year_match:
         year, month, day = (int(value) for value in year_match.groups())
         return build_date(year, month, day)
 
-    month_day_match = re.search(r"([0-9]{1,2})\s*月\s*([0-9]{1,2})\s*日(?:発売|販売|登場|予定)?", text)
+    month_day_match = MONTH_DAY_PATTERN.search(text)
     if month_day_match:
         today = date.today()
         month, day = (int(value) for value in month_day_match.groups())
@@ -276,6 +357,36 @@ def extract_release_date(text: str) -> date | None:
         return candidate
 
     return None
+
+
+def infer_year_from_text(text: str) -> int:
+    year_match = re.search(r"20[0-9]{2}", text)
+    if year_match:
+        return int(year_match.group(0))
+    return date.today().year
+
+
+def score_release_date_context(text: str, start: int, end: int) -> int:
+    before = text[max(0, start - 28):start]
+    after = text[end:min(len(text), end + 28)]
+    context = f"{before}{text[start:end]}{after}"
+
+    if any(keyword in context for keyword in NON_RELEASE_DATE_CONTEXT_KEYWORDS):
+        return 0
+
+    score = 0
+    if any(keyword in before[-14:] for keyword in ["発売日", "発売予定日", "発売開始日", "販売日", "販売予定日", "販売開始日", "予約開始日", "予約受付開始"]):
+        score += 80
+    if re.search(r"(発売日|発売予定日|発売開始日|販売日|販売予定日|販売開始日|予約開始日|予約受付開始)\s*[：:]\s*$", before):
+        score += 40
+    if re.search(r"(から|より)\s*(発売|販売|予約)", after):
+        score += 60
+    if re.search(r"(発売|販売|予約受付|予約)\s*(開始|スタート|予定)?", after):
+        score += 35
+    if any(keyword in context for keyword in DATE_CONTEXT_KEYWORDS):
+        score += 25
+
+    return score
 
 
 def build_date(year: int, month: int, day: int) -> date | None:
