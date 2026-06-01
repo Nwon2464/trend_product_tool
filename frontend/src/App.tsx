@@ -1,4 +1,12 @@
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AlertTriangle,
   ArrowDownUp,
@@ -40,8 +48,27 @@ import type {
   SourceLog,
 } from "./types";
 
-const statusOptions = ["予約開始", "発売予定", "発売中", "再販", "抽選販売", "売り切れ", "完売", "廃盤", "不明"];
-const sourceTypes = ["official", "retail", "summary", "sns_x", "sns_instagram", "news", "manual", "other"];
+const statusOptions = [
+  "予約開始",
+  "発売予定",
+  "発売中",
+  "再販",
+  "抽選販売",
+  "売り切れ",
+  "完売",
+  "廃盤",
+  "不明",
+];
+const sourceTypes = [
+  "official",
+  "retail",
+  "summary",
+  "sns_x",
+  "sns_instagram",
+  "news",
+  "manual",
+  "other",
+];
 const sourceTypeLabels: Record<string, string> = {
   official: "公式",
   retail: "小売・EC",
@@ -64,7 +91,17 @@ type ScrapingTargetProgress = {
   message: string;
   cooldownUntil?: number;
 };
-type TerminalLogLevel = "info" | "start" | "fetch" | "parse" | "detail" | "keyword" | "candidate" | "success" | "warn" | "error";
+type TerminalLogLevel =
+  | "info"
+  | "start"
+  | "fetch"
+  | "parse"
+  | "detail"
+  | "keyword"
+  | "candidate"
+  | "success"
+  | "warn"
+  | "error";
 type TerminalLine = {
   id: string;
   time: string;
@@ -78,10 +115,12 @@ type ToastMessage = {
   message: string;
   createdAt: number;
 };
-type TableRow = Array<ReactNode> | {
-  cells: Array<ReactNode>;
-  className?: string;
-};
+type TableRow =
+  | Array<ReactNode>
+  | {
+      cells: Array<ReactNode>;
+      className?: string;
+    };
 type SourceLogFilter = "すべて" | "候補検出" | "登録済み" | "未登録";
 type SourceLogStatus = "候補検出" | "登録済み" | "未登録";
 type CandidateStatusAction = {
@@ -101,10 +140,34 @@ const candidateStatusLabels: Record<ProductCandidateStatus, string> = {
 };
 
 const candidateStatusActions: CandidateStatusAction[] = [
-  { status: "watching", label: "いいねする", activeLabel: "いいねを解除する", icon: Heart, className: "like" },
-  { status: "confirmed", label: "確認済みにする", activeLabel: "確認済みを解除する", icon: Check, className: "confirmed" },
-  { status: "ignored", label: "無視する", activeLabel: "無視を解除する", icon: Ban, className: "ignored" },
-  { status: "purchased", label: "購入済みにする", activeLabel: "購入済みを解除する", icon: ShoppingBag, className: "purchased" },
+  {
+    status: "watching",
+    label: "いいねする",
+    activeLabel: "いいねを解除する",
+    icon: Heart,
+    className: "like",
+  },
+  {
+    status: "confirmed",
+    label: "確認済みにする",
+    activeLabel: "確認済みを解除する",
+    icon: Check,
+    className: "confirmed",
+  },
+  {
+    status: "ignored",
+    label: "無視する",
+    activeLabel: "無視を解除する",
+    icon: Ban,
+    className: "ignored",
+  },
+  {
+    status: "purchased",
+    label: "購入済みにする",
+    activeLabel: "購入済みを解除する",
+    icon: ShoppingBag,
+    className: "purchased",
+  },
 ];
 
 const emptyProduct: ProductInput = {
@@ -139,7 +202,12 @@ const emptySource: SourceInput = {
   memo: "",
 };
 
-type Tab = "products" | "collection" | "source-management" | "keywords" | "notifications";
+type Tab =
+  | "products"
+  | "collection"
+  | "source-management"
+  | "keywords"
+  | "notifications";
 
 function toProductInput(product: Product): ProductInput {
   return {
@@ -197,12 +265,18 @@ function formatTerminalTime(date = new Date()) {
   });
 }
 
-function getPayloadString(payload: Record<string, unknown> | null, key: string) {
+function getPayloadString(
+  payload: Record<string, unknown> | null,
+  key: string,
+) {
   const value = payload?.[key];
   return typeof value === "string" ? value : null;
 }
 
-function getPayloadNumber(payload: Record<string, unknown> | null, key: string) {
+function getPayloadNumber(
+  payload: Record<string, unknown> | null,
+  key: string,
+) {
   const value = payload?.[key];
   return typeof value === "number" ? value : null;
 }
@@ -268,12 +342,16 @@ function detectedKeywordList(value: string | null) {
   } catch {
     // Keep using the raw detector output when it is not JSON.
   }
-  return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function sortSourcesByNewest(items: Source[]) {
   return [...items].sort((a, b) => {
-    const createdDiff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    const createdDiff =
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     return createdDiff || b.id - a.id;
   });
 }
@@ -308,8 +386,12 @@ export default function App() {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
   const [sourceLogs, setSourceLogs] = useState<SourceLog[]>([]);
-  const [productCandidates, setProductCandidates] = useState<ProductCandidate[]>([]);
-  const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([]);
+  const [productCandidates, setProductCandidates] = useState<
+    ProductCandidate[]
+  >([]);
+  const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>(
+    [],
+  );
   const [filters, setFilters] = useState({
     category: "",
     keyword: "",
@@ -328,22 +410,32 @@ export default function App() {
   const [isKeywordModalOpen, setIsKeywordModalOpen] = useState(false);
   const [isScrapingModalOpen, setIsScrapingModalOpen] = useState(false);
   const [isDeleteLogsModalOpen, setIsDeleteLogsModalOpen] = useState(false);
-  const [evidenceCandidate, setEvidenceCandidate] = useState<ProductCandidate | null>(null);
+  const [evidenceCandidate, setEvidenceCandidate] =
+    useState<ProductCandidate | null>(null);
   const [scrapingPrep, setScrapingPrep] = useState({
     category: "すべて",
     status: "すべて",
     sourceName: "",
   });
   const [isScrapingRunning, setIsScrapingRunning] = useState(false);
-  const [scrapingProgress, setScrapingProgress] = useState<Record<string, ScrapingTargetProgress>>({});
-  const [selectedScrapingKeys, setSelectedScrapingKeys] = useState<string[]>([]);
-  const [sourceLogFilter, setSourceLogFilter] = useState<SourceLogFilter>("すべて");
+  const [scrapingProgress, setScrapingProgress] = useState<
+    Record<string, ScrapingTargetProgress>
+  >({});
+  const [selectedScrapingKeys, setSelectedScrapingKeys] = useState<string[]>(
+    [],
+  );
+  const [sourceLogFilter, setSourceLogFilter] =
+    useState<SourceLogFilter>("すべて");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [highlightedNotificationLogId, setHighlightedNotificationLogId] = useState<number | null>(null);
-  const [activeScrapingJob, setActiveScrapingJob] = useState<ScrapingJob | null>(null);
-  const [updatingCandidateIds, setUpdatingCandidateIds] = useState<Set<number>>(new Set());
+  const [highlightedNotificationLogId, setHighlightedNotificationLogId] =
+    useState<number | null>(null);
+  const [activeScrapingJob, setActiveScrapingJob] =
+    useState<ScrapingJob | null>(null);
+  const [updatingCandidateIds, setUpdatingCandidateIds] = useState<Set<number>>(
+    new Set(),
+  );
   const terminalBodyRef = useRef<HTMLDivElement | null>(null);
   const terminalLineSeq = useRef(0);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -365,27 +457,45 @@ export default function App() {
   }, [products]);
 
   const productSourceUrls = useMemo(() => {
-    return new Set(products.map((product) => product.source_url).filter((url): url is string => Boolean(url)));
+    return new Set(
+      products
+        .map((product) => product.source_url)
+        .filter((url): url is string => Boolean(url)),
+    );
   }, [products]);
 
   const candidatesBySourceLogId = useMemo(() => {
-    return new Map(productCandidates.map((candidate) => [candidate.source_log_id, candidate]));
+    return new Map(
+      productCandidates.map((candidate) => [
+        candidate.source_log_id,
+        candidate,
+      ]),
+    );
   }, [productCandidates]);
 
   const filteredSourceLogs = useMemo(() => {
     return sourceLogs.filter((log) => {
-      const status = getSourceLogStatus(log, productSourceUrls, candidatesBySourceLogId);
+      const status = getSourceLogStatus(
+        log,
+        productSourceUrls,
+        candidatesBySourceLogId,
+      );
       if (sourceLogFilter !== "すべて") return status === sourceLogFilter;
       return true;
     });
   }, [candidatesBySourceLogId, productSourceUrls, sourceLogFilter, sourceLogs]);
 
-  const sortedProductCandidates = useMemo(() => (
-    [...productCandidates].sort((a, b) => {
-      const scoreDiff = b.profit_expectation - a.profit_expectation;
-      return scoreDiff || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    })
-  ), [productCandidates]);
+  const sortedProductCandidates = useMemo(
+    () =>
+      [...productCandidates].sort((a, b) => {
+        const scoreDiff = b.profit_expectation - a.profit_expectation;
+        return (
+          scoreDiff ||
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+      }),
+    [productCandidates],
+  );
 
   const candidateGroups = useMemo(() => {
     const groups = new Map<string, ProductCandidate[]>();
@@ -398,25 +508,47 @@ export default function App() {
       .map(([category, candidates]) => ({
         category,
         candidates,
-        highCount: candidates.filter((candidate) => candidate.profit_expectation >= 80).length,
-        averageExpectation: Math.round(candidates.reduce((total, candidate) => total + candidate.profit_expectation, 0) / candidates.length),
+        highCount: candidates.filter(
+          (candidate) => candidate.profit_expectation >= 80,
+        ).length,
+        averageExpectation: Math.round(
+          candidates.reduce(
+            (total, candidate) => total + candidate.profit_expectation,
+            0,
+          ) / candidates.length,
+        ),
       }))
       .sort((a, b) => {
-        const topScoreDiff = (b.candidates[0]?.profit_expectation ?? 0) - (a.candidates[0]?.profit_expectation ?? 0);
+        const topScoreDiff =
+          (b.candidates[0]?.profit_expectation ?? 0) -
+          (a.candidates[0]?.profit_expectation ?? 0);
         return topScoreDiff || b.candidates.length - a.candidates.length;
       });
   }, [sortedProductCandidates]);
 
-  const deletableUnregisteredLogs = useMemo(() => (
-    filteredSourceLogs.filter((log) => getSourceLogStatus(log, productSourceUrls, candidatesBySourceLogId) === "未登録")
-  ), [candidatesBySourceLogId, filteredSourceLogs, productSourceUrls]);
+  const deletableUnregisteredLogs = useMemo(
+    () =>
+      filteredSourceLogs.filter(
+        (log) =>
+          getSourceLogStatus(
+            log,
+            productSourceUrls,
+            candidatesBySourceLogId,
+          ) === "未登録",
+      ),
+    [candidatesBySourceLogId, filteredSourceLogs, productSourceUrls],
+  );
 
   const scrapingUrls = useMemo(() => {
     const sourceNameQuery = scrapingPrep.sourceName.trim().toLowerCase();
     return sortSourcesByNewest(sources)
       .filter((source) => {
-        const matchesCategory = scrapingPrep.category === "すべて" || source.target_category === scrapingPrep.category;
-        const matchesSourceName = sourceNameQuery === "" || source.source_name.toLowerCase().includes(sourceNameQuery);
+        const matchesCategory =
+          scrapingPrep.category === "すべて" ||
+          source.target_category === scrapingPrep.category;
+        const matchesSourceName =
+          sourceNameQuery === "" ||
+          source.source_name.toLowerCase().includes(sourceNameQuery);
         return matchesCategory && matchesSourceName;
       })
       .map((source) => ({
@@ -429,9 +561,13 @@ export default function App() {
       }));
   }, [scrapingPrep.category, scrapingPrep.sourceName, sources]);
 
-  const selectedScrapingTargets = useMemo(() => (
-    scrapingUrls.filter((source) => selectedScrapingKeys.includes(source.key))
-  ), [scrapingUrls, selectedScrapingKeys]);
+  const selectedScrapingTargets = useMemo(
+    () =>
+      scrapingUrls.filter((source) =>
+        selectedScrapingKeys.includes(source.key),
+      ),
+    [scrapingUrls, selectedScrapingKeys],
+  );
 
   const sourceCooldownUntilById = useMemo(() => {
     const values = new Map<number, number>();
@@ -447,20 +583,34 @@ export default function App() {
     return values;
   }, [sourceLogs]);
 
-  const getScrapingCooldownUntil = useCallback((target: (typeof scrapingUrls)[number]) => {
-    const progressCooldownUntil = scrapingProgress[target.key]?.cooldownUntil ?? 0;
-    const sourceCooldownUntil = typeof target.id === "number" ? sourceCooldownUntilById.get(target.id) ?? 0 : 0;
-    return Math.max(progressCooldownUntil, sourceCooldownUntil);
-  }, [scrapingProgress, sourceCooldownUntilById]);
+  const getScrapingCooldownUntil = useCallback(
+    (target: (typeof scrapingUrls)[number]) => {
+      const progressCooldownUntil =
+        scrapingProgress[target.key]?.cooldownUntil ?? 0;
+      const sourceCooldownUntil =
+        typeof target.id === "number"
+          ? (sourceCooldownUntilById.get(target.id) ?? 0)
+          : 0;
+      return Math.max(progressCooldownUntil, sourceCooldownUntil);
+    },
+    [scrapingProgress, sourceCooldownUntilById],
+  );
 
-  const getScrapingRemainingSeconds = useCallback((target: (typeof scrapingUrls)[number]) => {
-    const cooldownUntil = getScrapingCooldownUntil(target);
-    return Math.max(0, Math.ceil((cooldownUntil - nowMs) / 1000));
-  }, [getScrapingCooldownUntil, nowMs]);
+  const getScrapingRemainingSeconds = useCallback(
+    (target: (typeof scrapingUrls)[number]) => {
+      const cooldownUntil = getScrapingCooldownUntil(target);
+      return Math.max(0, Math.ceil((cooldownUntil - nowMs) / 1000));
+    },
+    [getScrapingCooldownUntil, nowMs],
+  );
 
-  const runnableScrapingTargets = useMemo(() => (
-    selectedScrapingTargets.filter((target) => getScrapingRemainingSeconds(target) === 0)
-  ), [getScrapingRemainingSeconds, selectedScrapingTargets]);
+  const runnableScrapingTargets = useMemo(
+    () =>
+      selectedScrapingTargets.filter(
+        (target) => getScrapingRemainingSeconds(target) === 0,
+      ),
+    [getScrapingRemainingSeconds, selectedScrapingTargets],
+  );
 
   const scrapingStatusSummary = useMemo(() => {
     const summary = {
@@ -475,7 +625,7 @@ export default function App() {
       progressCount: 0,
     };
 
-    scrapingUrls.forEach((source) => {
+    selectedScrapingTargets.forEach((source) => {
       const status = scrapingProgress[source.key]?.status ?? "待機中";
       if (status === "実行中") {
         summary.running += 1;
@@ -493,30 +643,46 @@ export default function App() {
       }
     });
 
-    summary.progressCount = summary.completed + summary.failed + summary.skipped;
+    summary.progressCount =
+      summary.completed + summary.failed + summary.skipped;
     return summary;
-  }, [scrapingProgress, scrapingUrls, selectedScrapingKeys.length]);
+  }, [
+    scrapingProgress,
+    scrapingUrls.length,
+    selectedScrapingKeys.length,
+    selectedScrapingTargets,
+  ]);
 
-  const scrapingProgressPercent = scrapingStatusSummary.total === 0
-    ? 0
-    : Math.round((scrapingStatusSummary.progressCount / scrapingStatusSummary.total) * 100);
+  const scrapingProgressTotal = scrapingStatusSummary.selected;
+  const scrapingProgressPercent =
+    scrapingProgressTotal === 0
+      ? 0
+      : Math.round(
+          (scrapingStatusSummary.progressCount / scrapingProgressTotal) * 100,
+        );
 
-  const appendTerminalLine = useCallback((level: TerminalLogLevel, message: string) => {
-    terminalLineSeq.current += 1;
-    setTerminalLines((current) => [
-      ...current,
-      {
-        id: `${Date.now()}-${terminalLineSeq.current}`,
-        time: formatTerminalTime(),
-        level,
-        message,
-      },
-    ]);
-  }, []);
+  const appendTerminalLine = useCallback(
+    (level: TerminalLogLevel, message: string) => {
+      terminalLineSeq.current += 1;
+      setTerminalLines((current) => [
+        ...current,
+        {
+          id: `${Date.now()}-${terminalLineSeq.current}`,
+          time: formatTerminalTime(),
+          level,
+          message,
+        },
+      ]);
+    },
+    [],
+  );
 
   const addToast = useCallback((type: ToastType, message: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setToasts((current) => [{ id, type, message, createdAt: Date.now() }, ...current]);
+    setToasts((current) => [
+      { id, type, message, createdAt: Date.now() },
+      ...current,
+    ]);
     window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
     }, 4500);
@@ -537,14 +703,24 @@ export default function App() {
       source_done: "success",
       done: "success",
     };
-    const level = levelByEventType[event.event_type] ?? (event.level === "error" ? "error" : event.level === "warn" ? "warn" : event.level === "success" ? "success" : "info");
+    const level =
+      levelByEventType[event.event_type] ??
+      (event.level === "error"
+        ? "error"
+        : event.level === "warn"
+          ? "warn"
+          : event.level === "success"
+            ? "success"
+            : "info");
     const eventTime = new Date(event.created_at);
     terminalLineSeq.current += 1;
     setTerminalLines((current) => [
       ...current,
       {
         id: `sse-${event.id}-${terminalLineSeq.current}`,
-        time: Number.isNaN(eventTime.getTime()) ? formatTerminalTime() : formatTerminalTime(eventTime),
+        time: Number.isNaN(eventTime.getTime())
+          ? formatTerminalTime()
+          : formatTerminalTime(eventTime),
         level,
         message: event.message,
       },
@@ -594,7 +770,14 @@ export default function App() {
       const [sortBy, sortOrder] = filters.sort.split(":");
       params.set("sort_by", sortBy);
       params.set("sort_order", sortOrder);
-      const [nextProducts, nextKeywords, nextSources, nextSourceLogs, nextProductCandidates, nextNotificationLogs] = await Promise.all([
+      const [
+        nextProducts,
+        nextKeywords,
+        nextSources,
+        nextSourceLogs,
+        nextProductCandidates,
+        nextNotificationLogs,
+      ] = await Promise.all([
         api.listProducts(params),
         api.listKeywords(),
         api.listSources(),
@@ -609,7 +792,8 @@ export default function App() {
       setProductCandidates(nextProductCandidates);
       setNotificationLogs(nextNotificationLogs);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "データの取得に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "データの取得に失敗しました";
       addToast("error", errorMessage);
     } finally {
       setLoading(false);
@@ -624,7 +808,14 @@ export default function App() {
   }, [loadAll]);
 
   useEffect(() => {
-    if (!isProductModalOpen && !isSourceModalOpen && !isKeywordModalOpen && !isScrapingModalOpen && !isDeleteLogsModalOpen && evidenceCandidate === null) {
+    if (
+      !isProductModalOpen &&
+      !isSourceModalOpen &&
+      !isKeywordModalOpen &&
+      !isScrapingModalOpen &&
+      !isDeleteLogsModalOpen &&
+      evidenceCandidate === null
+    ) {
       return;
     }
     const previousOverflow = document.body.style.overflow;
@@ -632,7 +823,14 @@ export default function App() {
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [evidenceCandidate, isDeleteLogsModalOpen, isKeywordModalOpen, isProductModalOpen, isScrapingModalOpen, isSourceModalOpen]);
+  }, [
+    evidenceCandidate,
+    isDeleteLogsModalOpen,
+    isKeywordModalOpen,
+    isProductModalOpen,
+    isScrapingModalOpen,
+    isSourceModalOpen,
+  ]);
 
   useEffect(() => {
     if (!isScrapingModalOpen) return;
@@ -663,15 +861,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setSelectedScrapingKeys((current) => (
-      current.filter((key) => scrapingUrls.some((source) => source.key === key))
-    ));
+    setSelectedScrapingKeys((current) =>
+      current.filter((key) =>
+        scrapingUrls.some((source) => source.key === key),
+      ),
+    );
   }, [scrapingUrls]);
 
   async function submitProduct(event: FormEvent) {
     event.preventDefault();
     try {
-      const successMessage = editingProductId === null ? "商品を登録しました" : "商品を更新しました";
+      const successMessage =
+        editingProductId === null ? "商品を登録しました" : "商品を更新しました";
       if (editingProductId === null) {
         await api.createProduct(productForm);
       } else {
@@ -684,7 +885,8 @@ export default function App() {
       setActiveTab("products");
       await loadAll();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "商品の保存に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "商品の保存に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -696,7 +898,8 @@ export default function App() {
       addToast("success", "商品を削除しました");
       await loadAll();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "商品の削除に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "商品の削除に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -710,7 +913,8 @@ export default function App() {
       addToast("success", "キーワードを登録しました");
       await loadAll();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "キーワードの保存に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "キーワードの保存に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -728,10 +932,16 @@ export default function App() {
   async function toggleKeyword(keyword: Keyword) {
     try {
       await api.updateKeyword(keyword.id, { is_active: !keyword.is_active });
-      addToast("success", keyword.is_active ? "キーワードを無効化しました" : "キーワードを有効化しました");
+      addToast(
+        "success",
+        keyword.is_active
+          ? "キーワードを無効化しました"
+          : "キーワードを有効化しました",
+      );
       await loadAll();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "キーワードの更新に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "キーワードの更新に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -740,13 +950,19 @@ export default function App() {
     event.preventDefault();
     try {
       const createdSource = await api.createSource(sourceForm);
-      setSources((current) => sortSourcesByNewest([createdSource, ...current.filter((source) => source.id !== createdSource.id)]));
+      setSources((current) =>
+        sortSourcesByNewest([
+          createdSource,
+          ...current.filter((source) => source.id !== createdSource.id),
+        ]),
+      );
       setSourceForm(emptySource);
       setIsSourceModalOpen(false);
       addToast("success", "情報源URLを登録しました");
       await loadAll();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "情報源の保存に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "情報源の保存に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -764,10 +980,14 @@ export default function App() {
   async function toggleSource(source: Source) {
     try {
       await api.updateSource(source.id, { is_active: !source.is_active });
-      addToast("success", source.is_active ? "情報源を無効化しました" : "情報源を有効化しました");
+      addToast(
+        "success",
+        source.is_active ? "情報源を無効化しました" : "情報源を有効化しました",
+      );
       await loadAll();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "情報源の更新に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "情報源の更新に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -779,7 +999,8 @@ export default function App() {
       addToast("success", "情報源を削除しました");
       await loadAll();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "情報源の削除に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "情報源の削除に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -791,17 +1012,25 @@ export default function App() {
       for (const log of deletableUnregisteredLogs) {
         await api.deleteSourceLog(log.id);
       }
-      addToast("success", `未登録ログを${deletableUnregisteredLogs.length}件削除しました`);
+      addToast(
+        "success",
+        `未登録ログを${deletableUnregisteredLogs.length}件削除しました`,
+      );
       setIsDeleteLogsModalOpen(false);
       await loadAll();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "未登録ログの削除に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "未登録ログの削除に失敗しました";
       addToast("error", errorMessage);
     }
   }
 
   async function deleteSourceLog(log: SourceLog) {
-    const status = getSourceLogStatus(log, productSourceUrls, candidatesBySourceLogId);
+    const status = getSourceLogStatus(
+      log,
+      productSourceUrls,
+      candidatesBySourceLogId,
+    );
     if (status !== "未登録") {
       const errorMessage = "候補検出済み、登録済みの取得ログは削除できません";
       addToast("error", errorMessage);
@@ -813,7 +1042,8 @@ export default function App() {
       addToast("success", "未登録ログを削除しました");
       await loadAll();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "取得ログの削除に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "取得ログの削除に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -828,12 +1058,16 @@ export default function App() {
       } else if (result.skipped_reason === "no_usable_items") {
         addToast("warning", "保存できる対象URLが見つかりませんでした");
       } else {
-        addToast("success", `取得完了: ${result.candidates.length}件候補作成 / ${result.created_count}件ログ保存 / ${result.skipped_count}件スキップ`);
+        addToast(
+          "success",
+          `取得完了: ${result.candidates.length}件候補作成 / ${result.created_count}件ログ保存 / ${result.skipped_count}件スキップ`,
+        );
       }
       await loadAll();
       setActiveTab("collection");
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "取得に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "取得に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -847,15 +1081,19 @@ export default function App() {
   }
 
   function toggleScrapingTarget(key: string) {
-    setSelectedScrapingKeys((current) => (
-      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
-    ));
+    setSelectedScrapingKeys((current) =>
+      current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key],
+    );
   }
 
   function toggleAllScrapingTargets() {
-    setSelectedScrapingKeys((current) => (
-      current.length === scrapingUrls.length ? [] : scrapingUrls.map((source) => source.key)
-    ));
+    setSelectedScrapingKeys((current) =>
+      current.length === scrapingUrls.length
+        ? []
+        : scrapingUrls.map((source) => source.key),
+    );
   }
 
   async function startScrapingJob(targets: (typeof scrapingUrls)[number][]) {
@@ -864,15 +1102,22 @@ export default function App() {
     setTerminalLines([]);
     eventSourceRef.current?.close();
     setScrapingProgress(() => ({
-      ...Object.fromEntries(targets.map((target) => [target.key, { status: "待機中" as const, message: "" }])),
+      ...Object.fromEntries(
+        targets.map((target) => [
+          target.key,
+          { status: "待機中" as const, message: "" },
+        ]),
+      ),
     }));
     try {
       const sourceIds = targets.map((target) => target.id);
-      const selectedStatuses = scrapingPrep.status === "すべて" ? null : [scrapingPrep.status];
+      const selectedStatuses =
+        scrapingPrep.status === "すべて" ? null : [scrapingPrep.status];
       appendTerminalLine("info", "POST /scraping-jobs");
       const job = await api.createScrapingJob({
         source_ids: sourceIds,
-        target_category: scrapingPrep.category === "すべて" ? null : scrapingPrep.category,
+        target_category:
+          scrapingPrep.category === "すべて" ? null : scrapingPrep.category,
         selected_statuses: selectedStatuses,
         max_items_per_source: 10,
         respect_robots: true,
@@ -881,7 +1126,8 @@ export default function App() {
       setActiveScrapingJob({
         job_id: job.job_id,
         status: job.status,
-        target_category: scrapingPrep.category === "すべて" ? null : scrapingPrep.category,
+        target_category:
+          scrapingPrep.category === "すべて" ? null : scrapingPrep.category,
         selected_statuses: selectedStatuses,
         total_sources: job.total_sources,
         completed_sources: 0,
@@ -896,20 +1142,32 @@ export default function App() {
       appendTerminalLine("info", `Scraping job created: ${job.job_id}`);
       connectScrapingJobEvents(job.job_id, targets);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Scraping job の作成に失敗しました";
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "Scraping job の作成に失敗しました";
       appendTerminalLine("error", errorMessage);
       addToast("error", errorMessage);
       setIsScrapingRunning(false);
     }
   }
 
-  function connectScrapingJobEvents(jobId: string, targets: (typeof scrapingUrls)[number][]) {
-    const targetBySourceId = new Map(targets.map((target) => [target.id, target]));
-    const eventSource = new EventSource(`${API_BASE_URL}/scraping-jobs/${jobId}/events`);
+  function connectScrapingJobEvents(
+    jobId: string,
+    targets: (typeof scrapingUrls)[number][],
+  ) {
+    const targetBySourceId = new Map(
+      targets.map((target) => [target.id, target]),
+    );
+    const eventSource = new EventSource(
+      `${API_BASE_URL}/scraping-jobs/${jobId}/events`,
+    );
     eventSourceRef.current = eventSource;
 
     eventSource.addEventListener("progress", (event) => {
-      const jobEvent = JSON.parse((event as MessageEvent).data) as ScrapingJobEvent;
+      const jobEvent = JSON.parse(
+        (event as MessageEvent).data,
+      ) as ScrapingJobEvent;
       appendScrapingJobEvent(jobEvent);
       if (jobEvent.source_id !== null) {
         const target = targetBySourceId.get(jobEvent.source_id);
@@ -920,17 +1178,25 @@ export default function App() {
               message: current[target.key]?.message ?? "",
               cooldownUntil: current[target.key]?.cooldownUntil,
             };
-            if (jobEvent.event_type === "source_start" || jobEvent.event_type === "fetch" || jobEvent.event_type === "parse") {
+            if (
+              jobEvent.event_type === "source_start" ||
+              jobEvent.event_type === "fetch" ||
+              jobEvent.event_type === "parse"
+            ) {
               nextProgress.status = "実行中";
               nextProgress.message = "取得中";
             } else if (jobEvent.event_type === "skip") {
               nextProgress.status = "スキップ";
               nextProgress.message = messageForSkipEvent(jobEvent);
               const reason = getPayloadString(jobEvent.payload, "reason");
-              const nextRetrySeconds = getPayloadNumber(jobEvent.payload, "next_retry_seconds");
-              nextProgress.cooldownUntil = reason === "minimum_interval" && nextRetrySeconds !== null
-                ? Date.now() + nextRetrySeconds * 1000
-                : undefined;
+              const nextRetrySeconds = getPayloadNumber(
+                jobEvent.payload,
+                "next_retry_seconds",
+              );
+              nextProgress.cooldownUntil =
+                reason === "minimum_interval" && nextRetrySeconds !== null
+                  ? Date.now() + nextRetrySeconds * 1000
+                  : undefined;
             } else if (jobEvent.event_type === "error") {
               nextProgress.status = "失敗";
               nextProgress.message = jobEvent.message;
@@ -947,30 +1213,47 @@ export default function App() {
           });
         }
       }
-      void api.getScrapingJob(jobId).then(setActiveScrapingJob).catch(() => undefined);
+      void api
+        .getScrapingJob(jobId)
+        .then(setActiveScrapingJob)
+        .catch(() => undefined);
     });
 
     eventSource.addEventListener("done", (event) => {
-      const data = JSON.parse((event as MessageEvent).data) as { status?: string; message?: string };
-      appendTerminalLine(data.status === "completed" ? "success" : "error", data.message ?? "Scraping job completed");
+      const data = JSON.parse((event as MessageEvent).data) as {
+        status?: string;
+        message?: string;
+      };
+      appendTerminalLine(
+        data.status === "completed" ? "success" : "error",
+        data.message ?? "Scraping job completed",
+      );
       eventSource.close();
       if (eventSourceRef.current === eventSource) {
         eventSourceRef.current = null;
       }
       setIsScrapingRunning(false);
       appendTerminalLine("info", "Refreshing candidates and logs");
-      void api.getScrapingJob(jobId).then((job) => {
-        setActiveScrapingJob(job);
-        if (data.status === "completed" && job.skipped_sources > 0) {
-          addToast("warning", "一部の情報源がスキップされました");
-        } else if (data.status === "completed") {
-          addToast("success", "Scraping Job が完了しました");
-        } else {
-          addToast("error", "Scraping Job に失敗しました");
-        }
-      }).catch(() => {
-        addToast(data.status === "completed" ? "success" : "error", data.status === "completed" ? "Scraping Job が完了しました" : "Scraping Job に失敗しました");
-      });
+      void api
+        .getScrapingJob(jobId)
+        .then((job) => {
+          setActiveScrapingJob(job);
+          if (data.status === "completed" && job.skipped_sources > 0) {
+            addToast("warning", "一部の情報源がスキップされました");
+          } else if (data.status === "completed") {
+            addToast("success", "Scraping Job が完了しました");
+          } else {
+            addToast("error", "Scraping Job に失敗しました");
+          }
+        })
+        .catch(() => {
+          addToast(
+            data.status === "completed" ? "success" : "error",
+            data.status === "completed"
+              ? "Scraping Job が完了しました"
+              : "Scraping Job に失敗しました",
+          );
+        });
       void loadAll().then(() => {
         setActiveTab("collection");
       });
@@ -999,9 +1282,13 @@ export default function App() {
     setEditingProductId(null);
     setProductForm({
       ...emptyProduct,
-      category: candidate?.category ?? source?.target_category ?? emptyProduct.category,
+      category:
+        candidate?.category ?? source?.target_category ?? emptyProduct.category,
       product_name: candidate?.product_name ?? log.title,
-      price: candidate?.price === null || candidate?.price === undefined ? "" : String(candidate.price),
+      price:
+        candidate?.price === null || candidate?.price === undefined
+          ? ""
+          : String(candidate.price),
       release_date: candidate?.release_date ?? "",
       sales_store: candidate?.sales_store ?? "",
       status: "不明",
@@ -1013,11 +1300,20 @@ export default function App() {
         `取得ログID: ${log.id}`,
         candidate ? `候補ID: ${candidate.id}` : "",
         candidate ? `感知理由: ${candidate.detected_reason}` : "",
-        candidate ? `利益期待度: ${candidate.profit_expectation} / ${expectationLabel(candidate.profit_expectation)}` : "",
+        candidate
+          ? `利益期待度: ${candidate.profit_expectation} / ${expectationLabel(candidate.profit_expectation)}`
+          : "",
         log.raw_text ? `取得内容: ${log.raw_text}` : "",
-      ].filter(Boolean).join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
     });
-    addToast("info", candidate ? "商品候補の内容を商品登録フォームに反映しました" : "取得ログの内容を商品登録フォームに反映しました");
+    addToast(
+      "info",
+      candidate
+        ? "商品候補の内容を商品登録フォームに反映しました"
+        : "取得ログの内容を商品登録フォームに反映しました",
+    );
     setIsProductModalOpen(true);
   }
 
@@ -1043,24 +1339,40 @@ export default function App() {
         `検出キーワード: ${formatDetectedKeywords(candidate.detected_keywords)}`,
         `利益期待度: ${candidate.profit_expectation} / ${expectationLabel(candidate.profit_expectation)}`,
         log?.raw_text ? `取得内容: ${log.raw_text}` : "",
-      ].filter(Boolean).join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
     });
     addToast("info", "商品候補の内容を商品登録フォームに反映しました");
     setIsProductModalOpen(true);
   }
 
-  async function updateCandidateStatus(candidate: ProductCandidate, candidateStatus: ProductCandidateStatus) {
-    const nextStatus = candidate.candidate_status === candidateStatus ? "new" : candidateStatus;
+  async function updateCandidateStatus(
+    candidate: ProductCandidate,
+    candidateStatus: ProductCandidateStatus,
+  ) {
+    const nextStatus =
+      candidate.candidate_status === candidateStatus ? "new" : candidateStatus;
     setUpdatingCandidateIds((current) => new Set(current).add(candidate.id));
     try {
-      const updatedCandidate = await api.updateProductCandidate(candidate.id, { candidate_status: nextStatus });
-      setProductCandidates((current) => (
-        current.map((item) => (item.id === updatedCandidate.id ? updatedCandidate : item))
-      ));
-      setEvidenceCandidate((current) => (current?.id === updatedCandidate.id ? updatedCandidate : current));
-      addToast("success", `商品候補を「${candidateStatusLabel(nextStatus)}」に更新しました`);
+      const updatedCandidate = await api.updateProductCandidate(candidate.id, {
+        candidate_status: nextStatus,
+      });
+      setProductCandidates((current) =>
+        current.map((item) =>
+          item.id === updatedCandidate.id ? updatedCandidate : item,
+        ),
+      );
+      setEvidenceCandidate((current) =>
+        current?.id === updatedCandidate.id ? updatedCandidate : current,
+      );
+      addToast(
+        "success",
+        `商品候補を「${candidateStatusLabel(nextStatus)}」に更新しました`,
+      );
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "商品候補の状態更新に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "商品候補の状態更新に失敗しました";
       addToast("error", errorMessage);
     } finally {
       setUpdatingCandidateIds((current) => {
@@ -1071,7 +1383,10 @@ export default function App() {
     }
   }
 
-  function renderCandidateStatusButton(candidate: ProductCandidate, action: CandidateStatusAction) {
+  function renderCandidateStatusButton(
+    candidate: ProductCandidate,
+    action: CandidateStatusAction,
+  ) {
     const Icon = action.icon;
     const isActive = candidate.candidate_status === action.status;
     const isUpdating = updatingCandidateIds.has(candidate.id);
@@ -1084,7 +1399,12 @@ export default function App() {
         title={isActive ? action.activeLabel : action.label}
         type="button"
       >
-        <Icon size={16} fill={isActive && action.status === "watching" ? "currentColor" : "none"} />
+        <Icon
+          size={16}
+          fill={
+            isActive && action.status === "watching" ? "currentColor" : "none"
+          }
+        />
       </button>
     );
   }
@@ -1095,11 +1415,20 @@ export default function App() {
     const visibleKeywords = keywords.slice(0, 3);
     const hiddenCount = keywords.length - visibleKeywords.length;
     return (
-      <div className="keyword-badges" title={formatDetectedKeywords(candidate.detected_keywords)}>
+      <div
+        className="keyword-badges"
+        title={formatDetectedKeywords(candidate.detected_keywords)}
+      >
         {visibleKeywords.map((keyword) => (
-          <span className="keyword-badge" key={keyword}>{keyword}</span>
+          <span className="keyword-badge" key={keyword}>
+            {keyword}
+          </span>
         ))}
-        {hiddenCount > 0 && <span className="keyword-badge keyword-badge-more">+{hiddenCount}</span>}
+        {hiddenCount > 0 && (
+          <span className="keyword-badge keyword-badge-more">
+            +{hiddenCount}
+          </span>
+        )}
       </div>
     );
   }
@@ -1154,8 +1483,12 @@ export default function App() {
   }
 
   function buildNotificationMessage(product: Product) {
-    const store = product.sales_store ? ` / 販売店: ${product.sales_store}` : "";
-    const releaseDate = product.release_date ? ` / 発売日: ${product.release_date}` : "";
+    const store = product.sales_store
+      ? ` / 販売店: ${product.sales_store}`
+      : "";
+    const releaseDate = product.release_date
+      ? ` / 発売日: ${product.release_date}`
+      : "";
     return `【${product.category}】${product.product_name} / 状態: ${product.status}${store}${releaseDate} / スコア: ${product.trend_score}`;
   }
 
@@ -1168,21 +1501,28 @@ export default function App() {
         status: "pending",
         sent_at: null,
       });
-      const notificationMessage = result.duplicated ? "同じ通知ログがすでに存在します" : "通知ログを作成しました";
+      const notificationMessage = result.duplicated
+        ? "同じ通知ログがすでに存在します"
+        : "通知ログを作成しました";
       if (result.duplicated) {
         setHighlightedNotificationLogId(result.notification_log.id);
         window.setTimeout(() => {
-          setHighlightedNotificationLogId((current) => current === result.notification_log.id ? null : current);
+          setHighlightedNotificationLogId((current) =>
+            current === result.notification_log.id ? null : current,
+          );
         }, 9000);
       }
       addToast(
         result.duplicated ? "warning" : "success",
-        result.duplicated ? `${notificationMessage}（ID: ${result.notification_log.id}）` : notificationMessage,
+        result.duplicated
+          ? `${notificationMessage}（ID: ${result.notification_log.id}）`
+          : notificationMessage,
       );
       await loadAll();
       setActiveTab("notifications");
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "通知ログの作成に失敗しました";
+      const errorMessage =
+        err instanceof Error ? err.message : "通知ログの作成に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -1198,26 +1538,46 @@ export default function App() {
           <p className="eyebrow">ローカルMVP</p>
           <h1>話題商品・最新情報収集ツール</h1>
         </div>
-        <button className="secondary-button topbar-refresh" onClick={() => void refreshAll()} disabled={loading} title="データ更新">
+        <button
+          className="secondary-button topbar-refresh"
+          onClick={() => void refreshAll()}
+          disabled={loading}
+          title="データ更新"
+        >
           <RefreshCw size={18} />
           データ更新
         </button>
       </header>
 
       <nav className="tabs" aria-label="メインナビゲーション">
-        <button className={activeTab === "collection" ? "active" : ""} onClick={() => setActiveTab("collection")}>
+        <button
+          className={activeTab === "collection" ? "active" : ""}
+          onClick={() => setActiveTab("collection")}
+        >
           情報収集
         </button>
-        <button className={activeTab === "products" ? "active" : ""} onClick={() => setActiveTab("products")}>
+        <button
+          className={activeTab === "products" ? "active" : ""}
+          onClick={() => setActiveTab("products")}
+        >
           商品一覧
         </button>
-        <button className={activeTab === "source-management" ? "active" : ""} onClick={() => setActiveTab("source-management")}>
+        <button
+          className={activeTab === "source-management" ? "active" : ""}
+          onClick={() => setActiveTab("source-management")}
+        >
           情報源管理
         </button>
-        <button className={activeTab === "keywords" ? "active" : ""} onClick={() => setActiveTab("keywords")}>
+        <button
+          className={activeTab === "keywords" ? "active" : ""}
+          onClick={() => setActiveTab("keywords")}
+        >
           キーワード
         </button>
-        <button className={activeTab === "notifications" ? "active" : ""} onClick={() => setActiveTab("notifications")}>
+        <button
+          className={activeTab === "notifications" ? "active" : ""}
+          onClick={() => setActiveTab("notifications")}
+        >
           通知ログ
         </button>
       </nav>
@@ -1233,7 +1593,10 @@ export default function App() {
                 <span className="count-badge">現在 {products.length} 件</span>
               </div>
               <div className="heading-actions">
-                <button className="primary-button" onClick={openProductCreateModal}>
+                <button
+                  className="primary-button"
+                  onClick={openProductCreateModal}
+                >
                   <Plus size={16} /> 商品情報を登録
                 </button>
               </div>
@@ -1241,10 +1604,17 @@ export default function App() {
             <div className="filters">
               <label>
                 カテゴリ
-                <select value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}>
+                <select
+                  value={filters.category}
+                  onChange={(event) =>
+                    setFilters({ ...filters, category: event.target.value })
+                  }
+                >
                   <option value="">すべて</option>
                   {categories.map((category) => (
-                    <option key={category} value={category}>{category}</option>
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -1252,41 +1622,78 @@ export default function App() {
                 キーワード
                 <div className="input-with-icon">
                   <Search size={16} />
-                  <input value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
+                  <input
+                    value={filters.keyword}
+                    onChange={(event) =>
+                      setFilters({ ...filters, keyword: event.target.value })
+                    }
+                  />
                 </div>
               </label>
               <label>
                 ステータス
-                <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}>
+                <select
+                  value={filters.status}
+                  onChange={(event) =>
+                    setFilters({ ...filters, status: event.target.value })
+                  }
+                >
                   <option value="">すべて</option>
                   {statusOptions.map((status) => (
-                    <option key={status} value={status}>{status}</option>
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
                   ))}
                 </select>
               </label>
               <label>
                 販売店
-                <input list="stores" value={filters.sales_store} onChange={(event) => setFilters({ ...filters, sales_store: event.target.value })} />
+                <input
+                  list="stores"
+                  value={filters.sales_store}
+                  onChange={(event) =>
+                    setFilters({ ...filters, sales_store: event.target.value })
+                  }
+                />
                 <datalist id="stores">
-                  {stores.map((store) => <option key={store} value={store} />)}
+                  {stores.map((store) => (
+                    <option key={store} value={store} />
+                  ))}
                 </datalist>
               </label>
               <label>
                 最小スコア
-                <input type="number" min="0" max="100" value={filters.min_score} onChange={(event) => setFilters({ ...filters, min_score: event.target.value })} />
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={filters.min_score}
+                  onChange={(event) =>
+                    setFilters({ ...filters, min_score: event.target.value })
+                  }
+                />
               </label>
               <label>
                 並び替え
                 <div className="input-with-icon">
                   <ArrowDownUp size={16} />
-                  <select value={filters.sort} onChange={(event) => setFilters({ ...filters, sort: event.target.value })}>
+                  <select
+                    value={filters.sort}
+                    onChange={(event) =>
+                      setFilters({ ...filters, sort: event.target.value })
+                    }
+                  >
                     {sortOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
                     ))}
                   </select>
                 </div>
               </label>
-              <button className="primary-button" onClick={loadAll}>更新</button>
+              <button className="primary-button" onClick={loadAll}>
+                更新
+              </button>
             </div>
             <div className="table-wrap">
               <table>
@@ -1314,26 +1721,65 @@ export default function App() {
                         <strong>{product.product_name}</strong>
                         <small>{product.brand ?? "-"}</small>
                       </td>
-                      <td>{product.price === null ? "-" : product.price.toLocaleString("ja-JP")}</td>
+                      <td>
+                        {product.price === null
+                          ? "-"
+                          : product.price.toLocaleString("ja-JP")}
+                      </td>
                       <td>{formatDate(product.release_date)}</td>
                       <td>{product.sales_store ?? "-"}</td>
                       <td>{product.status}</td>
                       <td>{product.source_name ?? "-"}</td>
-                      <td><span className={`score score-${scoreClass(product.trend_score)}`}>{product.trend_score} / {scoreLabel(product.trend_score)}</span></td>
+                      <td>
+                        <span
+                          className={`score score-${scoreClass(product.trend_score)}`}
+                        >
+                          {product.trend_score} /{" "}
+                          {scoreLabel(product.trend_score)}
+                        </span>
+                      </td>
                       <td>{formatDate(product.created_at)}</td>
                       <td className="actions">
-                        <button className="icon-button" onClick={() => editProduct(product)} title="編集"><Pencil size={16} /></button>
-                        <button className="icon-button" onClick={() => void createManualNotification(product)} title="通知ログ作成"><Megaphone size={16} /></button>
+                        <button
+                          className="icon-button"
+                          onClick={() => editProduct(product)}
+                          title="編集"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          className="icon-button"
+                          onClick={() => void createManualNotification(product)}
+                          title="通知ログ作成"
+                        >
+                          <Megaphone size={16} />
+                        </button>
                         {product.source_url && (
-                          <a className="icon-button" href={product.source_url} target="_blank" rel="noreferrer" title="情報源を開く"><ExternalLink size={16} /></a>
+                          <a
+                            className="icon-button"
+                            href={product.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="情報源を開く"
+                          >
+                            <ExternalLink size={16} />
+                          </a>
                         )}
-                        <button className="icon-button danger" onClick={() => void deleteProduct(product.id)} title="削除"><Trash2 size={16} /></button>
+                        <button
+                          className="icon-button danger"
+                          onClick={() => void deleteProduct(product.id)}
+                          title="削除"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </td>
                     </tr>
                   ))}
                   {products.length === 0 && (
                     <tr>
-                      <td colSpan={11} className="empty-cell">商品がありません</td>
+                      <td colSpan={11} className="empty-cell">
+                        商品がありません
+                      </td>
                     </tr>
                   )}
                 </tbody>
@@ -1350,7 +1796,10 @@ export default function App() {
                 <span className="count-badge">現在 {keywords.length} 件</span>
               </div>
               <div className="heading-actions">
-                <button className="primary-button" onClick={openKeywordCreateModal}>
+                <button
+                  className="primary-button"
+                  onClick={openKeywordCreateModal}
+                >
                   <Plus size={16} /> キーワードを追加
                 </button>
               </div>
@@ -1359,7 +1808,14 @@ export default function App() {
               有効なキーワードはスクレイピング時の商品候補検出・カテゴリ判定・スコアリングに使われます。無効なキーワードは保存されますが、検出には使われません。
             </p>
             <SimpleTable
-              headers={["カテゴリ", "キーワード", "優先度", "有効", "メモ", "操作"]}
+              headers={[
+                "カテゴリ",
+                "キーワード",
+                "優先度",
+                "有効",
+                "メモ",
+                "操作",
+              ]}
               rows={keywords.map((keyword) => [
                 keyword.category,
                 keyword.keyword,
@@ -1367,8 +1823,21 @@ export default function App() {
                 keyword.is_active ? "有効" : "無効",
                 keyword.memo ?? "",
                 <div className="actions" key={keyword.id}>
-                  <button className="secondary-button" onClick={() => void toggleKeyword(keyword)}>{keyword.is_active ? "検出から外す" : "検出に使う"}</button>
-                  <button className="icon-button danger" onClick={() => void api.deleteKeyword(keyword.id).then(loadAll)} title="削除"><Trash2 size={16} /></button>
+                  <button
+                    className="secondary-button"
+                    onClick={() => void toggleKeyword(keyword)}
+                  >
+                    {keyword.is_active ? "検出から外す" : "検出に使う"}
+                  </button>
+                  <button
+                    className="icon-button danger"
+                    onClick={() =>
+                      void api.deleteKeyword(keyword.id).then(loadAll)
+                    }
+                    title="削除"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>,
               ])}
             />
@@ -1379,19 +1848,31 @@ export default function App() {
           <section className="panel">
             <div className="section-heading">
               <h2>情報収集</h2>
-              <span>商品候補 {sortedProductCandidates.length}件 / 補助ログ {filteredSourceLogs.length}件</span>
+              <span>
+                商品候補 {sortedProductCandidates.length}件 / 補助ログ{" "}
+                {filteredSourceLogs.length}件
+              </span>
             </div>
             <div className="toolbar-row">
               <button className="primary-button" onClick={openScrapingModal}>
                 <Search size={16} /> スクレイピング準備
               </button>
               <div className="toolbar-actions">
-                <button className="secondary-button" disabled={deletableUnregisteredLogs.length === 0} onClick={() => setIsDeleteLogsModalOpen(true)}>
+                <button
+                  className="secondary-button"
+                  disabled={deletableUnregisteredLogs.length === 0}
+                  onClick={() => setIsDeleteLogsModalOpen(true)}
+                >
                   表示中の未登録を削除
                 </button>
                 <label className="compact-filter">
                   表示
-                  <select value={sourceLogFilter} onChange={(event) => setSourceLogFilter(event.target.value as SourceLogFilter)}>
+                  <select
+                    value={sourceLogFilter}
+                    onChange={(event) =>
+                      setSourceLogFilter(event.target.value as SourceLogFilter)
+                    }
+                  >
                     <option value="すべて">すべて</option>
                     <option value="候補検出">候補検出</option>
                     <option value="登録済み">登録済み</option>
@@ -1403,33 +1884,104 @@ export default function App() {
             {candidateGroups.length > 0 ? (
               <div className="candidate-board">
                 {candidateGroups.map((group) => (
-                  <section className={`candidate-category category-${categoryTone(group.category)}`} key={group.category}>
+                  <section
+                    className={`candidate-category category-${categoryTone(group.category)}`}
+                    key={group.category}
+                  >
                     <div className="candidate-category-header">
                       <div>
                         <h3>{group.category}</h3>
-                        <span>{group.candidates.length}件 / 高期待 {group.highCount}件 / 平均 {group.averageExpectation}</span>
+                        <span>
+                          {group.candidates.length}件 / 高期待 {group.highCount}
+                          件 / 平均 {group.averageExpectation}
+                        </span>
                       </div>
                     </div>
                     <SimpleTable
-                      headers={["商品名候補", "状態", "価格", "発売日", "販売元", "利益期待度", "検出理由", "キーワード", "情報元", "操作"]}
+                      headers={[
+                        "商品名候補",
+                        "状態",
+                        "価格",
+                        "発売日",
+                        "販売元",
+                        "利益期待度",
+                        "検出理由",
+                        "キーワード",
+                        "情報元",
+                        "操作",
+                      ]}
                       rows={group.candidates.map((candidate) => ({
                         className: `candidate-row candidate-row-${candidate.candidate_status}`,
                         cells: [
-                          <strong className="candidate-name clamp-2" key={candidate.id} title={candidate.product_name}>{candidate.product_name}</strong>,
-                          <span className={`candidate-status-badge candidate-status-${candidate.candidate_status}`} key={candidate.id}>
+                          <span
+                            className="candidate-title-clamp"
+                            key={candidate.id}
+                            title={candidate.product_name}
+                          >
+                            {candidate.product_name}
+                          </span>,
+                          <span
+                            className={`candidate-status-badge candidate-status-${candidate.candidate_status}`}
+                            key={candidate.id}
+                          >
                             {candidateStatusLabel(candidate.candidate_status)}
                           </span>,
                           formatPriceYen(candidate.price),
                           formatDate(candidate.release_date),
-                          <span className="clamp-1" key={candidate.id} title={candidate.sales_store ?? "-"}>{candidate.sales_store ?? "-"}</span>,
-                          <span className={`score score-${scoreClass(candidate.profit_expectation)}`} key={candidate.id}>{candidate.profit_expectation} / {expectationLabel(candidate.profit_expectation)}</span>,
-                          <span className="clamp-2" key={candidate.id} title={candidate.detected_reason}>{candidate.detected_reason}</span>,
+                          <span
+                            className="clamp-1"
+                            key={candidate.id}
+                            title={candidate.sales_store ?? "-"}
+                          >
+                            {candidate.sales_store ?? "-"}
+                          </span>,
+                          <span
+                            className={`score score-${scoreClass(candidate.profit_expectation)}`}
+                            key={candidate.id}
+                          >
+                            {candidate.profit_expectation} /{" "}
+                            {expectationLabel(candidate.profit_expectation)}
+                          </span>,
+                          <span
+                            className="candidate-reason-clamp"
+                            key={candidate.id}
+                            title={candidate.detected_reason}
+                          >
+                            {candidate.detected_reason}
+                          </span>,
                           renderDetectedKeywordBadges(candidate),
-                          <a className="source-link-button" href={candidate.source_url} target="_blank" rel="noreferrer" key={candidate.id} title="情報元を開く"><ExternalLink size={14} /> 開く</a>,
+                          <a
+                            className="source-link-button"
+                            href={candidate.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            key={candidate.id}
+                            title="情報元を開く"
+                          >
+                            <ExternalLink size={14} /> 開く
+                          </a>,
                           <div className="candidate-actions" key={candidate.id}>
-                            <button className="candidate-icon-button" onClick={() => setEvidenceCandidate(candidate)} title="根拠を見る" type="button"><FileText size={16} /></button>
-                            {candidateStatusActions.map((action) => renderCandidateStatusButton(candidate, action))}
-                            <button className="candidate-icon-button candidate-register-button" onClick={() => prefillProductFromCandidate(candidate)} title="商品登録へ" type="button"><PackagePlus size={16} /></button>
+                            <button
+                              className="candidate-icon-button"
+                              onClick={() => setEvidenceCandidate(candidate)}
+                              title="根拠を見る"
+                              type="button"
+                            >
+                              <FileText size={16} />
+                            </button>
+                            {candidateStatusActions.map((action) =>
+                              renderCandidateStatusButton(candidate, action),
+                            )}
+                            <button
+                              className="candidate-icon-button candidate-register-button"
+                              onClick={() =>
+                                prefillProductFromCandidate(candidate)
+                              }
+                              title="商品登録へ"
+                              type="button"
+                            >
+                              <PackagePlus size={16} />
+                            </button>
                           </div>,
                         ],
                       }))}
@@ -1440,7 +1992,9 @@ export default function App() {
             ) : (
               <div className="empty-state">
                 <h3>商品候補がありません</h3>
-                <p>スクレイピング準備から情報源を選択して候補を収集してください。</p>
+                <p>
+                  スクレイピング準備から情報源を選択して候補を収集してください。
+                </p>
               </div>
             )}
           </section>
@@ -1452,25 +2006,55 @@ export default function App() {
               <h2>情報源管理</h2>
               <div className="heading-actions">
                 <span>{sources.length}件</span>
-                <button className="primary-button" onClick={openSourceCreateModal}>
+                <button
+                  className="primary-button"
+                  onClick={openSourceCreateModal}
+                >
                   <Plus size={16} /> 情報源URLを登録
                 </button>
               </div>
             </div>
             <h3 className="subheading">登録済み情報源</h3>
             <SimpleTable
-              headers={["名前", "種類", "リンク", "カテゴリ", "優先度", "有効", "メモ", "操作"]}
+              headers={[
+                "名前",
+                "種類",
+                "リンク",
+                "カテゴリ",
+                "優先度",
+                "有効",
+                "メモ",
+                "操作",
+              ]}
               rows={sources.map((source) => [
                 source.source_name,
                 sourceTypeLabels[source.source_type] ?? source.source_type,
-                <a href={source.url} target="_blank" rel="noreferrer" key={source.id}>{source.url}</a>,
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  key={source.id}
+                >
+                  {source.url}
+                </a>,
                 source.target_category,
                 String(source.priority),
                 source.is_active ? "有効" : "無効",
                 source.memo ?? "",
                 <div className="actions" key={source.id}>
-                  <button className="secondary-button" onClick={() => void toggleSource(source)}>{source.is_active ? "無効化" : "有効化"}</button>
-                  <button className="icon-button danger" onClick={() => void deleteSource(source)} title="削除"><Trash2 size={16} /></button>
+                  <button
+                    className="secondary-button"
+                    onClick={() => void toggleSource(source)}
+                  >
+                    {source.is_active ? "無効化" : "有効化"}
+                  </button>
+                  <button
+                    className="icon-button danger"
+                    onClick={() => void deleteSource(source)}
+                    title="削除"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>,
               ])}
             />
@@ -1484,21 +2068,52 @@ export default function App() {
               <span>{notificationLogs.length}件</span>
             </div>
             <SimpleTable
-              headers={["ID", "商品ID", "チャンネル", "状態", "メッセージ", "作成日", "操作"]}
+              headers={[
+                "ID",
+                "商品ID",
+                "チャンネル",
+                "状態",
+                "メッセージ",
+                "作成日",
+                "操作",
+              ]}
               rows={notificationLogs.map((log) => ({
-                className: highlightedNotificationLogId === log.id ? "duplicate-highlight-row" : undefined,
+                className:
+                  highlightedNotificationLogId === log.id
+                    ? "duplicate-highlight-row"
+                    : undefined,
                 cells: [
-                  <span className="notification-log-id" key={log.id}>{log.id}</span>,
+                  <span className="notification-log-id" key={log.id}>
+                    {log.id}
+                  </span>,
                   String(log.product_id),
                   log.channel === "manual" ? "手動" : log.channel,
                   log.status === "pending" ? "未送信" : log.status,
                   log.message,
                   formatDate(log.created_at),
                   <div className="actions" key={log.id}>
-                    <button className="secondary-button" onClick={() => void api.updateNotificationLog(log.id, { status: "sent", sent_at: new Date().toISOString() }).then(loadAll)}>
+                    <button
+                      className="secondary-button"
+                      onClick={() =>
+                        void api
+                          .updateNotificationLog(log.id, {
+                            status: "sent",
+                            sent_at: new Date().toISOString(),
+                          })
+                          .then(loadAll)
+                      }
+                    >
                       送信済みにする
                     </button>
-                    <button className="icon-button danger" onClick={() => void api.deleteNotificationLog(log.id).then(loadAll)} title="削除"><Trash2 size={16} /></button>
+                    <button
+                      className="icon-button danger"
+                      onClick={() =>
+                        void api.deleteNotificationLog(log.id).then(loadAll)
+                      }
+                      title="削除"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </div>,
                 ],
               }))}
@@ -1508,63 +2123,182 @@ export default function App() {
       </main>
 
       {isProductModalOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={closeProductModal}>
-          <div className="product-modal" role="dialog" aria-modal="true" aria-labelledby="product-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={closeProductModal}
+        >
+          <div
+            className="product-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="modal-header">
-              <h2 id="product-modal-title">{editingProductId === null ? "商品情報を登録" : "商品情報を編集"}</h2>
-              <button className="icon-button" onClick={closeProductModal} title="閉じる"><X size={16} /></button>
+              <h2 id="product-modal-title">
+                {editingProductId === null
+                  ? "商品情報を登録"
+                  : "商品情報を編集"}
+              </h2>
+              <button
+                className="icon-button"
+                onClick={closeProductModal}
+                title="閉じる"
+              >
+                <X size={16} />
+              </button>
             </div>
             <div className="product-modal-content">
-              <ProductForm value={productForm} onChange={setProductForm} onSubmit={submitProduct} categories={categories} />
+              <ProductForm
+                value={productForm}
+                onChange={setProductForm}
+                onSubmit={submitProduct}
+                categories={categories}
+              />
             </div>
             <div className="modal-actions">
-              <button className="secondary-button" onClick={closeProductModal}>キャンセル</button>
+              <button className="secondary-button" onClick={closeProductModal}>
+                キャンセル
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {isSourceModalOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={closeSourceModal}>
-          <div className="source-modal" role="dialog" aria-modal="true" aria-labelledby="source-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={closeSourceModal}
+        >
+          <div
+            className="source-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="source-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="modal-header">
               <h2 id="source-modal-title">情報源URLを登録</h2>
-              <button className="icon-button" onClick={closeSourceModal} title="閉じる"><X size={16} /></button>
+              <button
+                className="icon-button"
+                onClick={closeSourceModal}
+                title="閉じる"
+              >
+                <X size={16} />
+              </button>
             </div>
-            <form className="source-form source-modal-form" onSubmit={submitSource}>
+            <form
+              className="source-form source-modal-form"
+              onSubmit={submitSource}
+            >
               <label>
                 情報源名
-                <input placeholder="情報源名" value={sourceForm.source_name} onChange={(event) => setSourceForm({ ...sourceForm, source_name: event.target.value })} required />
+                <input
+                  placeholder="情報源名"
+                  value={sourceForm.source_name}
+                  onChange={(event) =>
+                    setSourceForm({
+                      ...sourceForm,
+                      source_name: event.target.value,
+                    })
+                  }
+                  required
+                />
               </label>
               <label>
                 URL
-                <input placeholder="リンク" value={sourceForm.url} onChange={(event) => setSourceForm({ ...sourceForm, url: event.target.value })} required />
+                <input
+                  placeholder="リンク"
+                  value={sourceForm.url}
+                  onChange={(event) =>
+                    setSourceForm({ ...sourceForm, url: event.target.value })
+                  }
+                  required
+                />
               </label>
               <label>
                 対象カテゴリ
-                <input placeholder="対象カテゴリ" value={sourceForm.target_category} onChange={(event) => setSourceForm({ ...sourceForm, target_category: event.target.value })} required />
+                <input
+                  placeholder="対象カテゴリ"
+                  value={sourceForm.target_category}
+                  onChange={(event) =>
+                    setSourceForm({
+                      ...sourceForm,
+                      target_category: event.target.value,
+                    })
+                  }
+                  required
+                />
               </label>
               <label>
                 source_type
-                <select value={sourceForm.source_type} onChange={(event) => setSourceForm({ ...sourceForm, source_type: event.target.value })}>
-                  {sourceTypes.map((type) => <option key={type} value={type}>{sourceTypeLabels[type]}</option>)}
+                <select
+                  value={sourceForm.source_type}
+                  onChange={(event) =>
+                    setSourceForm({
+                      ...sourceForm,
+                      source_type: event.target.value,
+                    })
+                  }
+                >
+                  {sourceTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {sourceTypeLabels[type]}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label>
                 priority
-                <input type="number" min="1" max="3" value={sourceForm.priority} onChange={(event) => setSourceForm({ ...sourceForm, priority: Number(event.target.value) })} />
+                <input
+                  type="number"
+                  min="1"
+                  max="3"
+                  value={sourceForm.priority}
+                  onChange={(event) =>
+                    setSourceForm({
+                      ...sourceForm,
+                      priority: Number(event.target.value),
+                    })
+                  }
+                />
               </label>
               <label>
                 memo
-                <input placeholder="メモ" value={sourceForm.memo} onChange={(event) => setSourceForm({ ...sourceForm, memo: event.target.value })} />
+                <input
+                  placeholder="メモ"
+                  value={sourceForm.memo}
+                  onChange={(event) =>
+                    setSourceForm({ ...sourceForm, memo: event.target.value })
+                  }
+                />
               </label>
               <label className="checkbox-label">
-                <input type="checkbox" checked={sourceForm.is_active} onChange={(event) => setSourceForm({ ...sourceForm, is_active: event.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={sourceForm.is_active}
+                  onChange={(event) =>
+                    setSourceForm({
+                      ...sourceForm,
+                      is_active: event.target.checked,
+                    })
+                  }
+                />
                 is_active
               </label>
               <div className="modal-actions wide">
-                <button type="button" className="secondary-button" onClick={closeSourceModal}>キャンセル</button>
-                <button className="primary-button"><Plus size={16} /> 情報源URLを登録</button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={closeSourceModal}
+                >
+                  キャンセル
+                </button>
+                <button className="primary-button">
+                  <Plus size={16} /> 情報源URLを登録
+                </button>
               </div>
             </form>
           </div>
@@ -1572,36 +2306,106 @@ export default function App() {
       )}
 
       {isKeywordModalOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={closeKeywordModal}>
-          <div className="keyword-modal" role="dialog" aria-modal="true" aria-labelledby="keyword-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={closeKeywordModal}
+        >
+          <div
+            className="keyword-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="keyword-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="modal-header">
               <h2 id="keyword-modal-title">検出キーワードを追加</h2>
-              <button className="icon-button" onClick={closeKeywordModal} title="閉じる"><X size={16} /></button>
+              <button
+                className="icon-button"
+                onClick={closeKeywordModal}
+                title="閉じる"
+              >
+                <X size={16} />
+              </button>
             </div>
             <form className="keyword-modal-form" onSubmit={submitKeyword}>
               <label>
                 カテゴリ
-                <input placeholder="例: ポケモンカード" value={keywordForm.category} onChange={(event) => setKeywordForm({ ...keywordForm, category: event.target.value })} required />
+                <input
+                  placeholder="例: ポケモンカード"
+                  value={keywordForm.category}
+                  onChange={(event) =>
+                    setKeywordForm({
+                      ...keywordForm,
+                      category: event.target.value,
+                    })
+                  }
+                  required
+                />
               </label>
               <label>
                 キーワード
-                <input placeholder="例: ポケカ 再販" value={keywordForm.keyword} onChange={(event) => setKeywordForm({ ...keywordForm, keyword: event.target.value })} required />
+                <input
+                  placeholder="例: ポケカ 再販"
+                  value={keywordForm.keyword}
+                  onChange={(event) =>
+                    setKeywordForm({
+                      ...keywordForm,
+                      keyword: event.target.value,
+                    })
+                  }
+                  required
+                />
               </label>
               <label>
                 priority
-                <input type="number" min="1" max="3" value={keywordForm.priority} onChange={(event) => setKeywordForm({ ...keywordForm, priority: Number(event.target.value) })} />
+                <input
+                  type="number"
+                  min="1"
+                  max="3"
+                  value={keywordForm.priority}
+                  onChange={(event) =>
+                    setKeywordForm({
+                      ...keywordForm,
+                      priority: Number(event.target.value),
+                    })
+                  }
+                />
               </label>
               <label className="checkbox-label">
-                <input type="checkbox" checked={keywordForm.is_active} onChange={(event) => setKeywordForm({ ...keywordForm, is_active: event.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={keywordForm.is_active}
+                  onChange={(event) =>
+                    setKeywordForm({
+                      ...keywordForm,
+                      is_active: event.target.checked,
+                    })
+                  }
+                />
                 検出に使う
               </label>
               <label className="wide">
                 memo
-                <input placeholder="メモ" value={keywordForm.memo} onChange={(event) => setKeywordForm({ ...keywordForm, memo: event.target.value })} />
+                <input
+                  placeholder="メモ"
+                  value={keywordForm.memo}
+                  onChange={(event) =>
+                    setKeywordForm({ ...keywordForm, memo: event.target.value })
+                  }
+                />
               </label>
               <div className="modal-actions wide">
-                <button type="button" className="secondary-button" onClick={closeKeywordModal}>キャンセル</button>
-                <button className="primary-button"><Plus size={16} /> キーワードを追加</button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={closeKeywordModal}
+                >
+                  キャンセル
+                </button>
+                <button className="primary-button">
+                  <Plus size={16} /> キーワードを追加
+                </button>
               </div>
             </form>
           </div>
@@ -1609,41 +2413,98 @@ export default function App() {
       )}
 
       {isDeleteLogsModalOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setIsDeleteLogsModalOpen(false)}>
-          <div className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-logs-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => setIsDeleteLogsModalOpen(false)}
+        >
+          <div
+            className="confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-logs-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="modal-header">
               <h2 id="delete-logs-modal-title">未登録ログの削除</h2>
-              <button className="icon-button" onClick={() => setIsDeleteLogsModalOpen(false)} title="閉じる"><X size={16} /></button>
+              <button
+                className="icon-button"
+                onClick={() => setIsDeleteLogsModalOpen(false)}
+                title="閉じる"
+              >
+                <X size={16} />
+              </button>
             </div>
-            <p className="confirm-text">表示中の未登録ログ {deletableUnregisteredLogs.length}件を削除しますか？</p>
-            <p className="muted-text">候補検出済み、登録済みの取得ログは削除されません。</p>
+            <p className="confirm-text">
+              表示中の未登録ログ {deletableUnregisteredLogs.length}
+              件を削除しますか？
+            </p>
+            <p className="muted-text">
+              候補検出済み、登録済みの取得ログは削除されません。
+            </p>
             <div className="modal-actions">
-              <button className="secondary-button" onClick={() => setIsDeleteLogsModalOpen(false)}>キャンセル</button>
-              <button className="primary-button danger-button" onClick={() => void deleteVisibleUnregisteredLogs()}>削除</button>
+              <button
+                className="secondary-button"
+                onClick={() => setIsDeleteLogsModalOpen(false)}
+              >
+                キャンセル
+              </button>
+              <button
+                className="primary-button danger-button"
+                onClick={() => void deleteVisibleUnregisteredLogs()}
+              >
+                削除
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {evidenceCandidate && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setEvidenceCandidate(null)}>
-          <div className="evidence-modal" role="dialog" aria-modal="true" aria-labelledby="evidence-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => setEvidenceCandidate(null)}
+        >
+          <div
+            className="evidence-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="evidence-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="modal-header">
               <h2 id="evidence-modal-title">候補の根拠</h2>
-              <button className="icon-button" onClick={() => setEvidenceCandidate(null)} title="閉じる"><X size={16} /></button>
+              <button
+                className="icon-button"
+                onClick={() => setEvidenceCandidate(null)}
+                title="閉じる"
+              >
+                <X size={16} />
+              </button>
             </div>
             {(() => {
-              const log = sourceLogs.find((item) => item.id === evidenceCandidate.source_log_id);
+              const log = sourceLogs.find(
+                (item) => item.id === evidenceCandidate.source_log_id,
+              );
               return (
                 <div className="evidence-content">
                   <div className="evidence-grid">
                     <div>
                       <span>ページタイトル</span>
-                      <strong>{log?.title ?? evidenceCandidate.product_name}</strong>
+                      <strong>
+                        {log?.title ?? evidenceCandidate.product_name}
+                      </strong>
                     </div>
                     <div>
                       <span>情報元URL</span>
-                      <a href={log?.url ?? evidenceCandidate.source_url} target="_blank" rel="noreferrer">{log?.url ?? evidenceCandidate.source_url}</a>
+                      <a
+                        href={log?.url ?? evidenceCandidate.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {log?.url ?? evidenceCandidate.source_url}
+                      </a>
                     </div>
                     <div>
                       <span>検出日</span>
@@ -1659,44 +2520,89 @@ export default function App() {
                     </div>
                     <div>
                       <span>検出キーワード</span>
-                      <strong>{formatDetectedKeywords(evidenceCandidate.detected_keywords)}</strong>
+                      <strong>
+                        {formatDetectedKeywords(
+                          evidenceCandidate.detected_keywords,
+                        )}
+                      </strong>
                     </div>
                     <div>
                       <span>利益期待度</span>
-                      <strong>{evidenceCandidate.profit_expectation} / {expectationLabel(evidenceCandidate.profit_expectation)}</strong>
+                      <strong>
+                        {evidenceCandidate.profit_expectation} /{" "}
+                        {expectationLabel(evidenceCandidate.profit_expectation)}
+                      </strong>
                     </div>
                     <div>
                       <span>候補状態</span>
-                      <strong>{candidateStatusLabel(evidenceCandidate.candidate_status)}</strong>
+                      <strong>
+                        {candidateStatusLabel(
+                          evidenceCandidate.candidate_status,
+                        )}
+                      </strong>
                     </div>
                   </div>
                   <div className="evidence-raw">
                     <span>raw_text</span>
-                    <pre>{log?.raw_text ?? "対応する取得ログが見つかりません。"}</pre>
+                    <pre>
+                      {log?.raw_text ?? "対応する取得ログが見つかりません。"}
+                    </pre>
                   </div>
                 </div>
               );
             })()}
             <div className="modal-actions">
-              {candidateStatusActions.map((action) => (
-                renderCandidateStatusButton(evidenceCandidate, action)
-              ))}
-              <button className="secondary-button" onClick={() => setEvidenceCandidate(null)}>閉じる</button>
-              <button className="primary-button" onClick={() => { prefillProductFromCandidate(evidenceCandidate); setEvidenceCandidate(null); }}><SendToBack size={16} /> 商品登録へ</button>
+              {candidateStatusActions.map((action) =>
+                renderCandidateStatusButton(evidenceCandidate, action),
+              )}
+              <button
+                className="secondary-button"
+                onClick={() => setEvidenceCandidate(null)}
+              >
+                閉じる
+              </button>
+              <button
+                className="primary-button"
+                onClick={() => {
+                  prefillProductFromCandidate(evidenceCandidate);
+                  setEvidenceCandidate(null);
+                }}
+              >
+                <SendToBack size={16} /> 商品登録へ
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {isScrapingModalOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={closeScrapingModal}>
-          <div className="modal scraping-modal" role="dialog" aria-modal="true" aria-labelledby="scraping-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={closeScrapingModal}
+        >
+          <div
+            className="modal scraping-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="scraping-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="modal-header">
               <h2 id="scraping-modal-title">スクレイピング準備</h2>
-              <button className="icon-button" onClick={closeScrapingModal} disabled={isScrapingRunning} title="閉じる"><X size={16} /></button>
+              <button
+                className="icon-button"
+                onClick={closeScrapingModal}
+                disabled={isScrapingRunning}
+                title="閉じる"
+              >
+                <X size={16} />
+              </button>
             </div>
             {isScrapingRunning && (
-              <p className="scraping-lock-message">Scraping実行中は閉じられません</p>
+              <p className="scraping-lock-message">
+                Scraping実行中は閉じられません
+              </p>
             )}
             <div className="scraping-modal-layout">
               <div className="scraping-modal-left">
@@ -1706,13 +2612,21 @@ export default function App() {
                     <select
                       value={scrapingPrep.category}
                       onChange={(event) => {
-                        setScrapingPrep({ ...scrapingPrep, category: event.target.value });
-                        appendTerminalLine("info", `Category selected: ${event.target.value}`);
+                        setScrapingPrep({
+                          ...scrapingPrep,
+                          category: event.target.value,
+                        });
+                        appendTerminalLine(
+                          "info",
+                          `Category selected: ${event.target.value}`,
+                        );
                       }}
                     >
                       <option value="すべて">すべて</option>
                       {categories.map((category) => (
-                        <option key={category} value={category}>{category}</option>
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
                       ))}
                     </select>
                   </label>
@@ -1721,13 +2635,21 @@ export default function App() {
                     <select
                       value={scrapingPrep.status}
                       onChange={(event) => {
-                        setScrapingPrep({ ...scrapingPrep, status: event.target.value });
-                        appendTerminalLine("info", `Status selected: ${event.target.value}`);
+                        setScrapingPrep({
+                          ...scrapingPrep,
+                          status: event.target.value,
+                        });
+                        appendTerminalLine(
+                          "info",
+                          `Status selected: ${event.target.value}`,
+                        );
                       }}
                     >
                       <option value="すべて">すべて</option>
                       {statusOptions.map((status) => (
-                        <option key={status} value={status}>{status}</option>
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
                       ))}
                     </select>
                   </label>
@@ -1736,7 +2658,12 @@ export default function App() {
                     <input
                       placeholder="例: 公式, 入荷Now, サンリオ"
                       value={scrapingPrep.sourceName}
-                      onChange={(event) => setScrapingPrep({ ...scrapingPrep, sourceName: event.target.value })}
+                      onChange={(event) =>
+                        setScrapingPrep({
+                          ...scrapingPrep,
+                          sourceName: event.target.value,
+                        })
+                      }
                     />
                   </label>
                   <div className="url-panel">
@@ -1746,25 +2673,53 @@ export default function App() {
                     {scrapingUrls.length > 0 ? (
                       <>
                         <div className="url-selection-bar">
-                          <button className="secondary-button select-all-button" disabled={isScrapingRunning || scrapingUrls.length === 0} onClick={toggleAllScrapingTargets}>
-                            {selectedScrapingKeys.length === scrapingUrls.length ? "選択解除" : "すべて選択"}
+                          <button
+                            className="secondary-button select-all-button"
+                            disabled={
+                              isScrapingRunning || scrapingUrls.length === 0
+                            }
+                            onClick={toggleAllScrapingTargets}
+                          >
+                            {selectedScrapingKeys.length === scrapingUrls.length
+                              ? "選択解除"
+                              : "すべて選択"}
                           </button>
                           <div className="scraping-summary">
                             <div className="scraping-summary-line">
-                              <span>対象URL {scrapingStatusSummary.total}件</span>
-                              <span>選択中 {scrapingStatusSummary.selected}件</span>
-                              <span>取得完了 {scrapingStatusSummary.completed}件</span>
+                              <span>
+                                対象URL {scrapingStatusSummary.total}件
+                              </span>
+                              <span>
+                                選択中 {scrapingStatusSummary.selected}件
+                              </span>
+                              <span>
+                                取得完了 {scrapingStatusSummary.completed}件
+                              </span>
                               <span>失敗 {scrapingStatusSummary.failed}件</span>
-                              <span>スキップ {scrapingStatusSummary.skipped}件</span>
+                              <span>
+                                スキップ {scrapingStatusSummary.skipped}件
+                              </span>
                             </div>
                             <div className="scraping-progress-row">
-                              <span>進行状況: {scrapingStatusSummary.progressCount} / {scrapingStatusSummary.total}</span>
-                              <div className="scraping-progress-track" aria-label="進行状況">
-                                <div className="scraping-progress-fill" style={{ width: `${scrapingProgressPercent}%` }} />
+                              <span>
+                                進行状況: {scrapingStatusSummary.progressCount}{" "}
+                                / {scrapingProgressTotal}
+                              </span>
+                              <div
+                                className="scraping-progress-track"
+                                aria-label="進行状況"
+                              >
+                                <div
+                                  className="scraping-progress-fill"
+                                  style={{
+                                    width: `${scrapingProgressPercent}%`,
+                                  }}
+                                />
                               </div>
                             </div>
                             <span className="scraping-current-source">
-                              現在処理中: {scrapingStatusSummary.currentSourceName || "-"}
+                              現在処理中:{" "}
+                              {scrapingStatusSummary.currentSourceName || "-"}
                             </span>
                           </div>
                         </div>
@@ -1774,25 +2729,49 @@ export default function App() {
                             const rowStatus = progress?.status ?? "待機中";
                             const isCurrent = rowStatus === "実行中";
                             return (
-                              <li className={isCurrent ? "url-list-item url-list-item-current" : "url-list-item"} key={source.key}>
+                              <li
+                                className={
+                                  isCurrent
+                                    ? "url-list-item url-list-item-current"
+                                    : "url-list-item"
+                                }
+                                key={source.key}
+                              >
                                 <div className="url-row">
-                                  <label className="url-checkbox" title="一括Scrapingに含める">
+                                  <label
+                                    className="url-checkbox"
+                                    title="一括Scrapingに含める"
+                                  >
                                     <input
                                       type="checkbox"
-                                      checked={selectedScrapingKeys.includes(source.key)}
+                                      checked={selectedScrapingKeys.includes(
+                                        source.key,
+                                      )}
                                       disabled={isScrapingRunning}
-                                      onChange={() => toggleScrapingTarget(source.key)}
+                                      onChange={() =>
+                                        toggleScrapingTarget(source.key)
+                                      }
                                     />
                                   </label>
                                   <div className="url-main">
                                     <div className="url-title-row">
                                       <strong>{source.name}</strong>
-                                      <span className="url-kind-label">{source.kind}</span>
+                                      <span className="url-kind-label">
+                                        {source.kind}
+                                      </span>
                                     </div>
-                                    <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a>
+                                    <a
+                                      href={source.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      {source.url}
+                                    </a>
                                   </div>
                                   <div className="url-progress">
-                                    {renderScrapingStatusBadge(progress?.status)}
+                                    {renderScrapingStatusBadge(
+                                      progress?.status,
+                                    )}
                                   </div>
                                 </div>
                               </li>
@@ -1801,7 +2780,9 @@ export default function App() {
                         </ul>
                       </>
                     ) : (
-                      <p className="muted-text">このカテゴリの情報源URLはまだ登録されていません。</p>
+                      <p className="muted-text">
+                        このカテゴリの情報源URLはまだ登録されていません。
+                      </p>
                     )}
                   </div>
                 </div>
@@ -1809,11 +2790,27 @@ export default function App() {
                   <button
                     className={`primary-button ${runnableScrapingTargets.length > 0 ? "scraping-bulk-ready" : "scraping-bulk-empty"}`}
                     onClick={() => void startScrapingFromPrep()}
-                    disabled={isScrapingRunning || runnableScrapingTargets.length === 0}
+                    disabled={
+                      isScrapingRunning || runnableScrapingTargets.length === 0
+                    }
                   >
-                    <Download size={16} /> {isScrapingRunning ? "取得中..." : "選択したURLを一括Scraping"}
+                    <Download size={16} />{" "}
+                    {isScrapingRunning
+                      ? "取得中..."
+                      : "選択したURLを一括Scraping"}
                   </button>
-                  <button className="secondary-button" onClick={closeScrapingModal} disabled={isScrapingRunning}>閉じる</button>
+                  <button
+                    className="secondary-button"
+                    onClick={closeScrapingModal}
+                    disabled={isScrapingRunning}
+                    title={
+                      isScrapingRunning
+                        ? "Scraping実行中は閉じられません"
+                        : "閉じる"
+                    }
+                  >
+                    閉じる
+                  </button>
                 </div>
               </div>
               <div className="scraping-modal-right">
@@ -1827,30 +2824,70 @@ export default function App() {
                   </div>
                   <div className="terminal-job-status">
                     <span>status: {activeScrapingJob?.status ?? "no job"}</span>
-                    <span>sources: {activeScrapingJob ? `${activeScrapingJob.completed_sources}/${activeScrapingJob.total_sources}` : "0/0"}</span>
-                    <span>candidates: {activeScrapingJob?.created_candidates_count ?? 0}</span>
-                    <span>failed/skipped: {activeScrapingJob ? `${activeScrapingJob.failed_sources}/${activeScrapingJob.skipped_sources}` : "0/0"}</span>
+                    <span>
+                      sources:{" "}
+                      {activeScrapingJob
+                        ? `${activeScrapingJob.completed_sources}/${activeScrapingJob.total_sources}`
+                        : "0/0"}
+                    </span>
+                    <span>
+                      candidates:{" "}
+                      {activeScrapingJob?.created_candidates_count ?? 0}
+                    </span>
+                    <span>
+                      failed/skipped:{" "}
+                      {activeScrapingJob
+                        ? `${activeScrapingJob.failed_sources}/${activeScrapingJob.skipped_sources}`
+                        : "0/0"}
+                    </span>
                   </div>
                   <div className="terminal-body" ref={terminalBodyRef}>
                     <div className="terminal-order-marker">ログ開始 ↑</div>
-                    {terminalLines.length > 0 ? terminalLines.map((line) => (
-                      <div className={`terminal-line terminal-line-${line.level}`} key={line.id}>
-                        <span className="terminal-time">{line.time}</span>
-                        <strong className="terminal-level">[{line.level === "success" ? "DONE" : line.level.toUpperCase()}]</strong>
-                        <p className="terminal-message">{line.message}</p>
-                      </div>
-                    )) : (
+                    {terminalLines.length > 0 ? (
+                      terminalLines.map((line) => (
+                        <div
+                          className={`terminal-line terminal-line-${line.level}`}
+                          key={line.id}
+                        >
+                          <span className="terminal-time">{line.time}</span>
+                          <strong className="terminal-level">
+                            [
+                            {line.level === "success"
+                              ? "DONE"
+                              : line.level.toUpperCase()}
+                            ]
+                          </strong>
+                          <p className="terminal-message">{line.message}</p>
+                        </div>
+                      ))
+                    ) : (
                       <div className="terminal-line terminal-line-info">
-                        <span className="terminal-time">{formatTerminalTime()}</span>
+                        <span className="terminal-time">
+                          {formatTerminalTime()}
+                        </span>
                         <strong className="terminal-level">[INFO]</strong>
-                        <p className="terminal-message">Scrapingを開始するとログが表示されます</p>
+                        <p className="terminal-message">
+                          Scrapingを開始するとログが表示されます
+                        </p>
                       </div>
                     )}
-                    <div className="terminal-order-marker terminal-latest-marker">最新ログ ↓</div>
+                    <div className="terminal-order-marker terminal-latest-marker">
+                      最新ログ ↓
+                    </div>
                   </div>
                   <div className="terminal-actions">
-                    <button className="secondary-button mini-button" onClick={() => setTerminalLines([])}>ログをクリア</button>
-                    <button className="secondary-button mini-button" onClick={scrollTerminalToLatest}>最新ログへ移動</button>
+                    <button
+                      className="secondary-button mini-button"
+                      onClick={() => setTerminalLines([])}
+                    >
+                      ログをクリア
+                    </button>
+                    <button
+                      className="secondary-button mini-button"
+                      onClick={scrollTerminalToLatest}
+                    >
+                      最新ログへ移動
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1877,76 +2914,161 @@ function ProductForm({
     <form className="product-form" onSubmit={onSubmit}>
       <label>
         カテゴリ
-        <input list="categories" value={value.category} onChange={(event) => onChange({ ...value, category: event.target.value })} required />
+        <input
+          list="categories"
+          value={value.category}
+          onChange={(event) =>
+            onChange({ ...value, category: event.target.value })
+          }
+          required
+        />
         <datalist id="categories">
-          {categories.map((category) => <option key={category} value={category} />)}
+          {categories.map((category) => (
+            <option key={category} value={category} />
+          ))}
         </datalist>
       </label>
       <label>
         商品名
-        <input value={value.product_name} onChange={(event) => onChange({ ...value, product_name: event.target.value })} required />
+        <input
+          value={value.product_name}
+          onChange={(event) =>
+            onChange({ ...value, product_name: event.target.value })
+          }
+          required
+        />
       </label>
       <label>
         ブランド
-        <input value={value.brand} onChange={(event) => onChange({ ...value, brand: event.target.value })} />
+        <input
+          value={value.brand}
+          onChange={(event) =>
+            onChange({ ...value, brand: event.target.value })
+          }
+        />
       </label>
       <label>
         価格
-        <input type="number" min="0" value={value.price} onChange={(event) => onChange({ ...value, price: event.target.value })} />
+        <input
+          type="number"
+          min="0"
+          value={value.price}
+          onChange={(event) =>
+            onChange({ ...value, price: event.target.value })
+          }
+        />
       </label>
       <label>
         発売日
-        <input type="date" value={value.release_date} onChange={(event) => onChange({ ...value, release_date: event.target.value })} />
+        <input
+          type="date"
+          value={value.release_date}
+          onChange={(event) =>
+            onChange({ ...value, release_date: event.target.value })
+          }
+        />
       </label>
       <label>
         販売店
-        <input value={value.sales_store} onChange={(event) => onChange({ ...value, sales_store: event.target.value })} />
+        <input
+          value={value.sales_store}
+          onChange={(event) =>
+            onChange({ ...value, sales_store: event.target.value })
+          }
+        />
       </label>
       <label>
         ステータス
-        <select value={value.status} onChange={(event) => onChange({ ...value, status: event.target.value })}>
-          {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
+        <select
+          value={value.status}
+          onChange={(event) =>
+            onChange({ ...value, status: event.target.value })
+          }
+        >
+          {statusOptions.map((status) => (
+            <option key={status} value={status}>
+              {status}
+            </option>
+          ))}
         </select>
       </label>
       <label>
         情報源名
-        <input value={value.source_name} onChange={(event) => onChange({ ...value, source_name: event.target.value })} />
+        <input
+          value={value.source_name}
+          onChange={(event) =>
+            onChange({ ...value, source_name: event.target.value })
+          }
+        />
       </label>
       <label>
         情報源リンク
-        <input type="url" value={value.source_url} onChange={(event) => onChange({ ...value, source_url: event.target.value })} />
+        <input
+          type="url"
+          value={value.source_url}
+          onChange={(event) =>
+            onChange({ ...value, source_url: event.target.value })
+          }
+        />
       </label>
       <label>
         注目度スコア
-        <input type="range" min="0" max="100" value={value.trend_score} onChange={(event) => onChange({ ...value, trend_score: Number(event.target.value) })} />
-        <span className="range-value">{value.trend_score} / {scoreLabel(value.trend_score)}</span>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={value.trend_score}
+          onChange={(event) =>
+            onChange({ ...value, trend_score: Number(event.target.value) })
+          }
+        />
+        <span className="range-value">
+          {value.trend_score} / {scoreLabel(value.trend_score)}
+        </span>
       </label>
       <label className="wide">
         メモ
-        <textarea value={value.memo} onChange={(event) => onChange({ ...value, memo: event.target.value })} />
+        <textarea
+          value={value.memo}
+          onChange={(event) => onChange({ ...value, memo: event.target.value })}
+        />
       </label>
       <div className="form-actions">
-        <button className="primary-button"><Save size={16} /> 商品を保存</button>
+        <button className="primary-button">
+          <Save size={16} /> 商品を保存
+        </button>
       </div>
     </form>
   );
 }
 
-function SimpleTable({ headers, rows }: { headers: string[]; rows: TableRow[] }) {
+function SimpleTable({
+  headers,
+  rows,
+}: {
+  headers: string[];
+  rows: TableRow[];
+}) {
   return (
     <div className="table-wrap">
       <table>
         <thead>
-          <tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr>
+          <tr>
+            {headers.map((header) => (
+              <th key={header}>{header}</th>
+            ))}
+          </tr>
         </thead>
         <tbody>
           {rows.map((row, index) => {
             const cells = Array.isArray(row) ? row : row.cells;
             const className = Array.isArray(row) ? undefined : row.className;
             return (
-            <tr className={className} key={index}>
-              {cells.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}
-            </tr>
+              <tr className={className} key={index}>
+                {cells.map((cell, cellIndex) => (
+                  <td key={cellIndex}>{cell}</td>
+                ))}
+              </tr>
             );
           })}
         </tbody>

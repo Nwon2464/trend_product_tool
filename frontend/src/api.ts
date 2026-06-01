@@ -17,7 +17,8 @@ import type {
   SourceLog,
 } from "./types";
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 type ApiErrorDetail = {
   type?: string;
@@ -41,7 +42,9 @@ function normalizeErrorDetail(detail: unknown, status: number) {
       return "URL形式を確認してください。例: https://example.com/";
     }
 
-    const hasRequiredError = details.some((item) => item.type?.includes("missing"));
+    const hasRequiredError = details.some((item) =>
+      item.type?.includes("missing"),
+    );
     if (hasRequiredError) {
       return "必須項目を入力してください。";
     }
@@ -201,10 +204,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  getScrapingJob: (jobId: string) => request<ScrapingJob>(`/scraping-jobs/${jobId}`),
+  getScrapingJob: (jobId: string) =>
+    request<ScrapingJob>(`/scraping-jobs/${jobId}`),
   listScrapingJobs: () => request<ScrapingJob[]>("/scraping-jobs"),
-  listProductCandidates: () => request<ProductCandidate[]>("/product-candidates"),
-  updateProductCandidate: (id: number, input: { candidate_status: ProductCandidateStatus }) =>
+  listProductCandidates: () =>
+    request<ProductCandidate[]>("/product-candidates"),
+  updateProductCandidate: (
+    id: number,
+    input: { candidate_status: ProductCandidateStatus },
+  ) =>
     request<ProductCandidate>(`/product-candidates/${id}`, {
       method: "PUT",
       body: JSON.stringify(input),
