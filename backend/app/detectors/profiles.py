@@ -1,7 +1,38 @@
 from urllib.parse import urlparse
+from typing import Literal, TypedDict
 
 
-DEFAULT_PROFILE = {
+SourceType = Literal["generic", "news_article", "product_catalog"]
+ProductNameRule = Literal[
+    "clean_title",
+    "prefer_title",
+    "remove_site_suffix",
+    "catalog_breadcrumb",
+]
+
+
+class SiteProfile(TypedDict):
+    domain: str
+    source_type: SourceType
+    allow_paths: list[str]
+    exclude_paths: list[str]
+    weak_paths: list[str]
+    noise_keywords: list[str]
+    raw_noise_keywords: list[str]
+    product_url_patterns: list[str]
+    required_markers: list[str]
+    release_labels: list[str]
+    price_labels: list[str]
+    product_name_rules: list[ProductNameRule]
+    site_suffixes: list[str]
+    ignored_title_parts: list[str]
+    catalog_base_score: int
+    product_url_reason: str
+    catalog_keyword: str
+
+
+DEFAULT_PROFILE: SiteProfile = {
+    "domain": "",
     "source_type": "generic",
     "allow_paths": [],
     "exclude_paths": [],
@@ -45,8 +76,10 @@ DEFAULT_PROFILE = {
 }
 
 
-SITE_PROFILES = {
+SITE_PROFILES: dict[str, SiteProfile] = {
     "sanrio.co.jp": {
+        **DEFAULT_PROFILE,
+        "domain": "sanrio.co.jp",
         "source_type": "news_article",
         "allow_paths": ["/news/goods/"],
         "exclude_paths": ["/sanrioplus/", "/news/sanrioplus/"],
@@ -70,6 +103,8 @@ SITE_PROFILES = {
         "ignored_title_parts": [],
     },
     "bandai.co.jp": {
+        **DEFAULT_PROFILE,
+        "domain": "bandai.co.jp",
         "source_type": "product_catalog",
         "allow_paths": ["/catalog/item.php"],
         "exclude_paths": [],
@@ -90,14 +125,12 @@ SITE_PROFILES = {
 }
 
 
-def get_site_profile(url: str) -> dict:
+def get_site_profile(url: str) -> SiteProfile:
     parsed = urlparse(url)
     host = parsed.netloc.lower()
-    profile = DEFAULT_PROFILE.copy()
     for domain, site_profile in SITE_PROFILES.items():
         if host == domain or host.endswith(f".{domain}"):
-            profile.update(site_profile)
-            profile["domain"] = domain
-            return profile
-    profile["domain"] = host
+            return {**DEFAULT_PROFILE, **site_profile, "domain": domain}
+
+    profile: SiteProfile = {**DEFAULT_PROFILE, "domain": host}
     return profile
