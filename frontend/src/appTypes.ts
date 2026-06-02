@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ProductCandidateStatus } from "./types";
 
 export type ScrapingTargetStatus =
   | "待機中"
@@ -75,14 +76,15 @@ export type TableRow =
       className?: string;
     };
 
-export type SourceLogFilter = "すべて" | "候補検出" | "登録済み" | "未登録";
 export type SourceLogStatus = "候補検出" | "登録済み" | "未登録";
+export type CandidateStatusFilter = "すべて" | ProductCandidateStatus;
 export type CandidateSort =
   | "newest"
   | "price_desc"
   | "price_asc"
   | "expectation_desc"
   | "expectation_asc";
+export type CandidateViewMode = "category" | "all";
 
 export type ProductFilters = {
   category: string;

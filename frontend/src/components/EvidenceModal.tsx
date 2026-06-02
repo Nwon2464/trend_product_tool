@@ -70,10 +70,6 @@ export function EvidenceModal({
               <strong>{formatDate(log?.detected_at ?? null)}</strong>
             </div>
             <div>
-              <span>source_id</span>
-              <strong>{log?.source_id ?? "-"}</strong>
-            </div>
-            <div>
               <span>検出理由</span>
               <strong>{candidate.detected_reason}</strong>
             </div>
@@ -93,10 +89,10 @@ export function EvidenceModal({
               <strong>{candidateStatusLabel(candidate.candidate_status)}</strong>
             </div>
           </div>
-          <div className="evidence-raw">
-            <span>raw_text</span>
+          <details className="evidence-raw">
+            <summary>raw_textを表示</summary>
             <pre>{log?.raw_text ?? "対応する取得ログが見つかりません。"}</pre>
-          </div>
+          </details>
         </div>
         <div className="modal-actions">
           <CandidateStatusButtons

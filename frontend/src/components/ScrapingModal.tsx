@@ -202,7 +202,7 @@ export function ScrapingModal({
                       <div className="url-selection-title">
                         <div>
                           <h3>Scraping対象</h3>
-                          <span>有効な情報源 {scrapingStatusSummary.total}件</span>
+                          <span>対象URL {scrapingStatusSummary.total}件</span>
                         </div>
                         <button
                           className="secondary-button select-all-button select-all-button-under-title"
@@ -320,7 +320,7 @@ export function ScrapingModal({
                   </>
                 ) : (
                   <p className="muted-text">
-                    このカテゴリの情報源URLはまだ登録されていません。
+                    このカテゴリの対象URLはまだ登録されていません。
                   </p>
                 )}
               </div>

@@ -10,10 +10,11 @@ import { RefreshCw, Trash2, X } from "lucide-react";
 import { API_BASE_URL, api } from "./api";
 import type {
   CandidateSort,
+  CandidateStatusFilter,
+  CandidateViewMode,
   ProductFilters,
   ScrapingPrep,
   ScrapingTargetProgress,
-  SourceLogFilter,
   Tab,
   TerminalLogLevel,
   TerminalLine,
@@ -21,10 +22,12 @@ import type {
   ToastType,
 } from "./appTypes";
 import { CollectionPanel } from "./components/CollectionPanel";
-import { ConfirmDeleteLogsModal } from "./components/ConfirmDeleteLogsModal";
 import { EvidenceModal } from "./components/EvidenceModal";
 import { KeywordFormModal } from "./components/KeywordFormModal";
-import { KeywordManagementPanel } from "./components/KeywordManagementPanel";
+import {
+  KeywordManagementPanel,
+  type KeywordDetectionMode,
+} from "./components/KeywordManagementPanel";
 import { DeveloperSettingsPanel } from "./components/DeveloperSettingsPanel";
 import { ProductForm } from "./components/ProductForm";
 import { ProductListPanel } from "./components/ProductListPanel";
@@ -95,13 +98,15 @@ export default function App() {
   const [productForm, setProductForm] = useState<ProductInput>(emptyProduct);
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [keywordForm, setKeywordForm] = useState<KeywordInput>(emptyKeyword);
+  const [editingKeywordId, setEditingKeywordId] = useState<number | null>(null);
+  const [activeKeywordDetectionMode, setActiveKeywordDetectionMode] =
+    useState<KeywordDetectionMode | null>(null);
   const [sourceForm, setSourceForm] = useState<SourceInput>(emptySource);
   const [loading, setLoading] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
   const [isKeywordModalOpen, setIsKeywordModalOpen] = useState(false);
   const [isScrapingModalOpen, setIsScrapingModalOpen] = useState(false);
-  const [isDeleteLogsModalOpen, setIsDeleteLogsModalOpen] = useState(false);
   const [evidenceCandidate, setEvidenceCandidate] =
     useState<ProductCandidate | null>(null);
   const [scrapingPrep, setScrapingPrep] = useState<ScrapingPrep>({
@@ -116,9 +121,11 @@ export default function App() {
   const [selectedScrapingKeys, setSelectedScrapingKeys] = useState<string[]>(
     [],
   );
-  const [sourceLogFilter, setSourceLogFilter] =
-    useState<SourceLogFilter>("すべて");
+  const [candidateStatusFilter, setCandidateStatusFilter] =
+    useState<CandidateStatusFilter>("すべて");
   const [candidateSort, setCandidateSort] = useState<CandidateSort>("newest");
+  const [candidateViewMode, setCandidateViewMode] =
+    useState<CandidateViewMode>("category");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -166,102 +173,95 @@ export default function App() {
     );
   }, [productCandidates]);
 
-  const filteredSourceLogs = useMemo(() => {
-    return sourceLogs.filter((log) => {
-      const status = getSourceLogStatus(
-        log,
-        productSourceUrls,
-        candidatesBySourceLogId,
-      );
-      if (sourceLogFilter !== "すべて") return status === sourceLogFilter;
-      return true;
-    });
-  }, [candidatesBySourceLogId, productSourceUrls, sourceLogFilter, sourceLogs]);
+  const filteredProductCandidates = useMemo(() => {
+    if (candidateStatusFilter === "すべて") return productCandidates;
+    return productCandidates.filter(
+      (candidate) => candidate.candidate_status === candidateStatusFilter,
+    );
+  }, [candidateStatusFilter, productCandidates]);
 
-  const sortedProductCandidates = useMemo(() => {
-    const createdAtDesc = (a: ProductCandidate, b: ProductCandidate) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    const comparablePrice = (value: number | null | undefined) => {
-      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-        return null;
-      }
-      return value;
-    };
-    const comparableExpectation = (value: number | null | undefined) => {
-      if (typeof value !== "number" || !Number.isFinite(value)) {
-        return null;
-      }
-      return value;
-    };
-    const compareWithUnknownLast = (
-      aValue: number | null,
-      bValue: number | null,
-      direction: "asc" | "desc",
-    ) => {
-      if (aValue === null && bValue === null) return 0;
-      if (aValue === null) return 1;
-      if (bValue === null) return -1;
-      return direction === "asc" ? aValue - bValue : bValue - aValue;
-    };
+  const sortProductCandidatesInGroup = useCallback(
+    (candidates: ProductCandidate[]) => {
+      const createdAtDesc = (a: ProductCandidate, b: ProductCandidate) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      const comparablePrice = (value: number | null | undefined) => {
+        if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+          return null;
+        }
+        return value;
+      };
+      const comparableExpectation = (value: number | null | undefined) => {
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          return null;
+        }
+        return value;
+      };
+      const compareWithUnknownLast = (
+        aValue: number | null,
+        bValue: number | null,
+        direction: "asc" | "desc",
+      ) => {
+        if (aValue === null && bValue === null) return 0;
+        if (aValue === null) return 1;
+        if (bValue === null) return -1;
+        return direction === "asc" ? aValue - bValue : bValue - aValue;
+      };
 
-    return [...productCandidates].sort((a, b) => {
-      if (candidateSort === "price_desc" || candidateSort === "price_asc") {
-        const priceDiff = compareWithUnknownLast(
-          comparablePrice(a.price),
-          comparablePrice(b.price),
-          candidateSort === "price_asc" ? "asc" : "desc",
-        );
-        return priceDiff || createdAtDesc(a, b);
-      }
-      if (
-        candidateSort === "expectation_desc" ||
-        candidateSort === "expectation_asc"
-      ) {
-        const expectationDiff = compareWithUnknownLast(
-          comparableExpectation(a.profit_expectation),
-          comparableExpectation(b.profit_expectation),
-          candidateSort === "expectation_asc" ? "asc" : "desc",
-        );
-        return expectationDiff || createdAtDesc(a, b);
-      }
-      return createdAtDesc(a, b);
-    });
-  }, [candidateSort, productCandidates]);
+      return [...candidates].sort((a, b) => {
+        if (candidateSort === "price_desc" || candidateSort === "price_asc") {
+          const priceDiff = compareWithUnknownLast(
+            comparablePrice(a.price),
+            comparablePrice(b.price),
+            candidateSort === "price_asc" ? "asc" : "desc",
+          );
+          return priceDiff || createdAtDesc(a, b);
+        }
+        if (
+          candidateSort === "expectation_desc" ||
+          candidateSort === "expectation_asc"
+        ) {
+          const expectationDiff = compareWithUnknownLast(
+            comparableExpectation(a.profit_expectation),
+            comparableExpectation(b.profit_expectation),
+            candidateSort === "expectation_asc" ? "asc" : "desc",
+          );
+          return expectationDiff || createdAtDesc(a, b);
+        }
+        return createdAtDesc(a, b);
+      });
+    },
+    [candidateSort],
+  );
 
   const candidateGroups = useMemo(() => {
     const groups = new Map<string, ProductCandidate[]>();
-    sortedProductCandidates.forEach((candidate) => {
+    filteredProductCandidates.forEach((candidate) => {
       const group = groups.get(candidate.category) ?? [];
       group.push(candidate);
       groups.set(candidate.category, group);
     });
     return Array.from(groups.entries())
-      .map(([category, candidates]) => ({
-        category,
-        candidates,
-        highCount: candidates.filter(
-          (candidate) => candidate.profit_expectation >= 80,
-        ).length,
-        averageExpectation: Math.round(
-          candidates.reduce(
-            (total, candidate) => total + candidate.profit_expectation,
-            0,
-          ) / candidates.length,
-        ),
-      }));
-  }, [sortedProductCandidates]);
+      .map(([category, unsortedCandidates]) => {
+        const candidates = sortProductCandidatesInGroup(unsortedCandidates);
+        return {
+          category,
+          candidates,
+          highCount: candidates.filter(
+            (candidate) => candidate.profit_expectation >= 80,
+          ).length,
+          averageExpectation: Math.round(
+            candidates.reduce(
+              (total, candidate) => total + candidate.profit_expectation,
+              0,
+            ) / candidates.length,
+          ),
+        };
+      });
+  }, [filteredProductCandidates, sortProductCandidatesInGroup]);
 
-  const deletableUnregisteredLogs = useMemo(
-    () =>
-      filteredSourceLogs.filter(
-        (log) =>
-          getSourceLogStatus(
-            log,
-            productSourceUrls,
-            candidatesBySourceLogId,
-          ) === "未登録",
-      ),
-    [candidatesBySourceLogId, filteredSourceLogs, productSourceUrls],
+  const sortedAllProductCandidates = useMemo(
+    () => sortProductCandidatesInGroup(filteredProductCandidates),
+    [filteredProductCandidates, sortProductCandidatesInGroup],
   );
 
   const {
@@ -435,7 +435,6 @@ export default function App() {
       !isSourceModalOpen &&
       !isKeywordModalOpen &&
       !isScrapingModalOpen &&
-      !isDeleteLogsModalOpen &&
       evidenceCandidate === null
     ) {
       return;
@@ -447,7 +446,6 @@ export default function App() {
     };
   }, [
     evidenceCandidate,
-    isDeleteLogsModalOpen,
     isKeywordModalOpen,
     isProductModalOpen,
     isScrapingModalOpen,
@@ -529,10 +527,21 @@ export default function App() {
   async function submitKeyword(event: FormEvent) {
     event.preventDefault();
     try {
-      await api.createKeyword(keywordForm);
+      if (editingKeywordId) {
+        await api.updateKeyword(editingKeywordId, keywordForm);
+      } else {
+        await api.createKeyword(keywordForm);
+      }
       setKeywordForm(emptyKeyword);
+      setEditingKeywordId(null);
+      setActiveKeywordDetectionMode(null);
       setIsKeywordModalOpen(false);
-      addToast("success", "キーワードを登録しました");
+      addToast(
+        "success",
+        editingKeywordId
+          ? "キーワードを更新しました"
+          : "キーワードを登録しました",
+      );
       await loadAll();
     } catch (err) {
       const errorMessage =
@@ -543,17 +552,32 @@ export default function App() {
 
   function openKeywordCreateModal() {
     setKeywordForm(emptyKeyword);
+    setEditingKeywordId(null);
+    setIsKeywordModalOpen(true);
+  }
+
+  function openKeywordEditModal(keyword: Keyword) {
+    setKeywordForm({
+      category: keyword.category,
+      keyword: keyword.keyword,
+      priority: keyword.priority,
+      is_active: keyword.is_active,
+      memo: keyword.memo ?? "",
+    });
+    setEditingKeywordId(keyword.id);
     setIsKeywordModalOpen(true);
   }
 
   function closeKeywordModal() {
     setIsKeywordModalOpen(false);
     setKeywordForm(emptyKeyword);
+    setEditingKeywordId(null);
   }
 
   async function toggleKeyword(keyword: Keyword) {
     try {
       await api.updateKeyword(keyword.id, { is_active: !keyword.is_active });
+      setActiveKeywordDetectionMode(null);
       addToast(
         "success",
         keyword.is_active
@@ -564,6 +588,77 @@ export default function App() {
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "キーワードの更新に失敗しました";
+      addToast("error", errorMessage);
+    }
+  }
+
+  async function deleteKeyword(keywordId: number) {
+    try {
+      await api.deleteKeyword(keywordId);
+      setActiveKeywordDetectionMode(null);
+      addToast("success", "キーワードを削除しました");
+      await loadAll();
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "キーワードの削除に失敗しました";
+      addToast("error", errorMessage);
+    }
+  }
+
+  async function updateKeywordsActiveState(
+    targetKeywords: Keyword[],
+    isActive: boolean,
+  ) {
+    const targets = targetKeywords.filter(
+      (keyword) => keyword.is_active !== isActive,
+    );
+    if (targets.length === 0) return;
+
+    try {
+      await Promise.all(
+        targets.map((keyword) =>
+          api.updateKeyword(keyword.id, { is_active: isActive }),
+        ),
+      );
+      setActiveKeywordDetectionMode(null);
+      addToast(
+        "success",
+        `キーワードを${isActive ? "有効化" : "無効化"}しました`,
+      );
+      await loadAll();
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "キーワードの更新に失敗しました";
+      addToast("error", errorMessage);
+    }
+  }
+
+  async function applyKeywordDetectionMode(mode: KeywordDetectionMode) {
+    const modeLabel =
+      mode === "focused"
+        ? "絞り込み重視"
+        : mode === "balanced"
+          ? "バランス"
+          : "広く収集";
+    try {
+      await Promise.all(
+        keywords.map((keyword) => {
+          const isActive =
+            mode === "focused"
+              ? keyword.priority === 1
+              : mode === "balanced"
+                ? keyword.priority <= 2
+                : true;
+          return api.updateKeyword(keyword.id, { is_active: isActive });
+        }),
+      );
+      setActiveKeywordDetectionMode(mode);
+      addToast("success", `検出モードを「${modeLabel}」に反映しました`);
+      await loadAll();
+    } catch (err) {
+      setActiveKeywordDetectionMode(null);
+      const errorMessage =
+        err instanceof Error ? err.message : "検出モードの反映に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -655,26 +750,6 @@ export default function App() {
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "情報源の削除に失敗しました";
-      addToast("error", errorMessage);
-    }
-  }
-
-  async function deleteVisibleUnregisteredLogs() {
-    if (deletableUnregisteredLogs.length === 0) return;
-
-    try {
-      for (const log of deletableUnregisteredLogs) {
-        await api.deleteSourceLog(log.id);
-      }
-      addToast(
-        "success",
-        `未登録ログを${deletableUnregisteredLogs.length}件削除しました`,
-      );
-      setIsDeleteLogsModalOpen(false);
-      await loadAll();
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "未登録ログの削除に失敗しました";
       addToast("error", errorMessage);
     }
   }
@@ -1201,27 +1276,31 @@ export default function App() {
         {activeTab === "keywords" && (
           <KeywordManagementPanel
             keywords={keywords}
+            activeDetectionMode={activeKeywordDetectionMode}
             onCreateKeyword={openKeywordCreateModal}
+            onEditKeyword={openKeywordEditModal}
             onToggleKeyword={(keyword) => void toggleKeyword(keyword)}
-            onDeleteKeyword={(keywordId) =>
-              void api.deleteKeyword(keywordId).then(loadAll)
+            onSetKeywordsActive={(targetKeywords, isActive) =>
+              void updateKeywordsActiveState(targetKeywords, isActive)
             }
+            onApplyDetectionMode={(mode) => void applyKeywordDetectionMode(mode)}
+            onDeleteKeyword={(keywordId) => void deleteKeyword(keywordId)}
           />
         )}
 
         {activeTab === "collection" && (
           <CollectionPanel
-            productCandidateCount={sortedProductCandidates.length}
-            sourceLogCount={filteredSourceLogs.length}
-            deletableUnregisteredLogCount={deletableUnregisteredLogs.length}
-            sourceLogFilter={sourceLogFilter}
+            productCandidateCount={filteredProductCandidates.length}
+            candidateStatusFilter={candidateStatusFilter}
             candidateSort={candidateSort}
+            candidateViewMode={candidateViewMode}
             candidateGroups={candidateGroups}
+            allCandidates={sortedAllProductCandidates}
             updatingCandidateIds={updatingCandidateIds}
             onOpenScrapingModal={openScrapingModal}
-            onOpenDeleteLogsModal={() => setIsDeleteLogsModalOpen(true)}
-            onSourceLogFilterChange={setSourceLogFilter}
+            onCandidateStatusFilterChange={setCandidateStatusFilter}
             onCandidateSortChange={setCandidateSort}
+            onCandidateViewModeChange={setCandidateViewMode}
             onShowEvidence={setEvidenceCandidate}
             onUpdateStatus={(candidate, candidateStatus) =>
               void updateCandidateStatus(candidate, candidateStatus)
@@ -1369,18 +1448,11 @@ export default function App() {
 
       {isKeywordModalOpen && (
         <KeywordFormModal
+          isEditing={editingKeywordId !== null}
           keywordForm={keywordForm}
           onChange={setKeywordForm}
           onSubmit={submitKeyword}
           onClose={closeKeywordModal}
-        />
-      )}
-
-      {isDeleteLogsModalOpen && (
-        <ConfirmDeleteLogsModal
-          deletableCount={deletableUnregisteredLogs.length}
-          onClose={() => setIsDeleteLogsModalOpen(false)}
-          onDelete={() => void deleteVisibleUnregisteredLogs()}
         />
       )}
 
