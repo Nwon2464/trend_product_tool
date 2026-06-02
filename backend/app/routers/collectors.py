@@ -23,6 +23,7 @@ def run_collector(
             db,
             source=db_source,
             max_items=request.max_items,
+            max_candidates=request.max_candidates,
             respect_robots=request.respect_robots,
             minimum_interval_seconds=request.minimum_interval_seconds,
             selected_statuses=request.selected_statuses,

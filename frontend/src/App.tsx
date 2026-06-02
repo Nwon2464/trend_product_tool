@@ -119,6 +119,7 @@ export default function App() {
     category: "すべて",
     status: "すべて",
     sourceName: "",
+    candidateLimit: "10",
   });
   const [isScrapingRunning, setIsScrapingRunning] = useState(false);
   const [scrapingProgress, setScrapingProgress] = useState<
@@ -458,7 +459,12 @@ export default function App() {
 
   const openScrapingModal = useCallback(() => {
     resetScrapingModalState();
-    setScrapingPrep({ category: "すべて", status: "すべて", sourceName: "" });
+    setScrapingPrep({
+      category: "すべて",
+      status: "すべて",
+      sourceName: "",
+      candidateLimit: "10",
+    });
     setIsScrapingModalOpen(true);
   }, [resetScrapingModalState]);
 
@@ -816,6 +822,7 @@ export default function App() {
       const sourceIds = targets.map((target) => target.id);
       const selectedStatuses =
         scrapingPrep.status === "すべて" ? null : [scrapingPrep.status];
+      const maxCandidatesPerSource = Number(scrapingPrep.candidateLimit) || 10;
       appendTerminalLine("info", "POST /scraping-jobs");
       const job = await api.createScrapingJob({
         source_ids: sourceIds,
@@ -823,6 +830,7 @@ export default function App() {
           scrapingPrep.category === "すべて" ? null : scrapingPrep.category,
         selected_statuses: selectedStatuses,
         max_items_per_source: 10,
+        max_candidates_per_source: maxCandidatesPerSource,
         respect_robots: true,
         minimum_interval_seconds: SCRAPING_MIN_INTERVAL_SECONDS,
       });
@@ -2212,6 +2220,27 @@ export default function App() {
                         })
                       }
                     />
+                  </label>
+                  <label>
+                    候補上限
+                    <select
+                      value={scrapingPrep.candidateLimit}
+                      onChange={(event) => {
+                        setScrapingPrep({
+                          ...scrapingPrep,
+                          candidateLimit: event.target.value,
+                        });
+                        appendTerminalLine(
+                          "info",
+                          `Candidate limit selected: ${event.target.value}`,
+                        );
+                      }}
+                    >
+                      <option value="1">1件だけ取得</option>
+                      <option value="5">5件まで取得</option>
+                      <option value="10">10件まで取得</option>
+                      <option value="30">30件まで取得</option>
+                    </select>
                   </label>
                   <div className="url-panel">
                     <div className="url-panel-header">

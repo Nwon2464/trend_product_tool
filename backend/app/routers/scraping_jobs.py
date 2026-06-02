@@ -32,6 +32,7 @@ def create_scraping_job(
         scraping_jobs.run_scraping_job,
         job.job_uid,
         max_items_per_source=request.max_items_per_source,
+        max_candidates_per_source=request.max_candidates_per_source,
         respect_robots=request.respect_robots,
         minimum_interval_seconds=request.minimum_interval_seconds,
     )

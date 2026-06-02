@@ -194,6 +194,7 @@ export const api = {
       body: JSON.stringify({
         source_id: sourceId,
         max_items: 10,
+        max_candidates: 10,
         respect_robots: true,
         minimum_interval_seconds: 300,
         selected_statuses: selectedStatuses?.length ? selectedStatuses : null,

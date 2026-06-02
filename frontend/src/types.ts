@@ -122,6 +122,7 @@ export type ScrapingJobCreateRequest = {
   target_category: string | null;
   selected_statuses: string[] | null;
   max_items_per_source: number;
+  max_candidates_per_source: number;
   respect_robots: boolean;
   minimum_interval_seconds: number;
 };

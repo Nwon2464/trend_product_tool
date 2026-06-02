@@ -108,6 +108,7 @@ def run_scraping_job(
     job_uid: str,
     *,
     max_items_per_source: int,
+    max_candidates_per_source: int,
     respect_robots: bool,
     minimum_interval_seconds: int,
 ) -> None:
@@ -188,6 +189,7 @@ def run_scraping_job(
                         db,
                         source=source,
                         max_items=max_items_per_source,
+                        max_candidates=max_candidates_per_source,
                         respect_robots=respect_robots,
                         minimum_interval_seconds=minimum_interval_seconds,
                         selected_statuses=selected_statuses or None,

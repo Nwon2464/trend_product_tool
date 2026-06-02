@@ -183,6 +183,7 @@ def run_collector(
     *,
     source: models.Source,
     max_items: int,
+    max_candidates: int,
     respect_robots: bool,
     minimum_interval_seconds: int,
     selected_statuses: list[str] | None = None,
@@ -289,7 +290,10 @@ def run_collector(
                 items,
                 source_url=source.url,
                 respect_robots=respect_robots,
-                max_detail_fetches=max(MAX_DETAIL_FETCHES, max_items * 3),
+                max_detail_fetches=min(
+                    MAX_DETAIL_FETCHES,
+                    max(max_items, max_candidates) * 3,
+                ),
                 progress_callback=progress_callback,
             )
             emit_progress(progress_callback, "detail_fetch", "success", "詳細ページ取得完了", {"items": len(items)})
@@ -326,9 +330,13 @@ def run_collector(
         created_candidates: list[models.ProductCandidate] = []
         skipped_count = 0
         skipped_details: list[str] = []
+        candidate_limit_reached = False
         active_keywords = crud.list_active_keywords(db)
         for item in items:
-            if len(created_logs) >= max_items or len(created_candidates) >= max_items:
+            if len(created_logs) >= max_items:
+                break
+            if len(created_candidates) >= max_candidates:
+                candidate_limit_reached = True
                 break
             if selected_statuses:
                 has_signal = candidate_detector.has_selected_status_signal(
@@ -423,6 +431,23 @@ def run_collector(
                     "商品候補を作成しました",
                     {"candidate_id": created_candidate.id, "source_log_id": created_log.id},
                 )
+                if len(created_candidates) >= max_candidates:
+                    candidate_limit_reached = True
+                    skipped_details.append(
+                        f"candidate_limit_reached: max_candidates={max_candidates}"
+                    )
+                    emit_progress(
+                        progress_callback,
+                        "candidate_limit",
+                        "warn",
+                        "候補生成数が上限に達したため停止しました",
+                        {
+                            "reason": "candidate_limit_reached",
+                            "max_candidates": max_candidates,
+                            "created_candidates_count": len(created_candidates),
+                        },
+                    )
+                    break
 
         crud.finish_collection_run(
             db,
@@ -441,6 +466,8 @@ def run_collector(
                 "created_logs_count": len(created_logs),
                 "created_candidates_count": len(created_candidates),
                 "skipped_count": skipped_count,
+                "candidate_limit_reached": candidate_limit_reached,
+                "max_candidates": max_candidates,
             },
         )
         return schemas.CollectorRunResponse(
