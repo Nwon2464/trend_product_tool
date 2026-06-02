@@ -46,6 +46,7 @@ from .detectors.profiles import DEFAULT_PROFILE, SITE_PROFILES, get_site_profile
 from .detectors.scoring import (
     DETECTION_RULES,
     HIGH_VALUE_CATEGORIES,
+    NEGATIVE_AVAILABILITY_KEYWORDS,
     STATUS_KEYWORD_GROUPS,
     score_for_keyword_priority,
 )
@@ -59,4 +60,3 @@ from .detectors.text_utils import (
     normalize_text,
     parse_japanese_date,
 )
-

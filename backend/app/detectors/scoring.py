@@ -21,6 +21,17 @@ DETECTION_RULES = [
     ("抽選販売", 18, ["抽選", "抽選販売", "抽選受付", "抽選申込"]),
 ]
 
+NEGATIVE_AVAILABILITY_KEYWORDS = [
+    "販売終了",
+    "完売",
+    "在庫なし",
+    "受付終了",
+    "販売休止",
+    "予定数終了",
+    "終了しました",
+    "終了いたしました",
+]
+
 STATUS_KEYWORD_GROUPS = {
     "予約開始": ["予約開始", "予約受付", "予約販売", "先行予約", "抽選予約", "予約"],
     "発売予定": ["販売予定", "発売予定", "新発売", "発売日", "発売決定", "登場予定"],
@@ -50,7 +61,11 @@ def score_keyword_matches(text: str) -> tuple[list[str], int, list[str]]:
     score = 0
     reasons: list[str] = []
     for label, points, keywords in DETECTION_RULES:
-        rule_matches = [keyword for keyword in keywords if keyword in text]
+        rule_matches = [
+            keyword
+            for keyword in keywords
+            if keyword in text and keyword not in NEGATIVE_AVAILABILITY_KEYWORDS
+        ]
         if rule_matches:
             matched.extend(rule_matches)
             score += points
@@ -94,4 +109,3 @@ def score_for_keyword_priority(priority: int) -> int:
     if priority == 2:
         return 10
     return 5
-

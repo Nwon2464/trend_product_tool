@@ -52,6 +52,20 @@ BANDAI_RSS = """<?xml version="1.0" encoding="UTF-8"?>
 </channel></rss>
 """
 
+STARBUCKS_RSS = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+  <item>
+    <title>バナナ アフォガート フラペチーノ®</title>
+    <link>https://stories.starbucks.co.jp/press/2026/pr2026-05-20/</link>
+    <description>
+      商品名／価格 バナナ アフォガート フラペチーノ® Tall 687円
+      2026年5月27日より発売 新商品 季節限定
+      一時的な欠品または早期に販売終了する場合がございます。
+    </description>
+  </item>
+</channel></rss>
+"""
+
 
 @contextmanager
 def patched_fetch(fixtures: dict[str, str]) -> Iterator[None]:
@@ -132,6 +146,15 @@ def assert_direct_detector_cases() -> None:
         priority=1,
         is_active=True,
     )
+    starbucks_source = models.Source(
+        id=3,
+        source_name="スターバックス公式",
+        source_type="official",
+        url="https://stories.starbucks.co.jp/press/2026/pr2026-05-20/",
+        target_category="スタバ",
+        priority=1,
+        is_active=True,
+    )
 
     sanrio_goods = candidate_detector.build_candidate_from_source_log(
         source=sanrio_source,
@@ -178,11 +201,38 @@ def assert_direct_detector_cases() -> None:
     assert str(bandai.release_date) == "2026-06-15"
     assert bandai.price == 3300
 
+    starbucks = candidate_detector.build_candidate_from_source_log(
+        source=starbucks_source,
+        source_log=make_source_log(
+            "バナナ アフォガート フラペチーノ®",
+            "https://stories.starbucks.co.jp/press/2026/pr2026-05-20/",
+            "商品名／価格 バナナ アフォガート フラペチーノ® Tall 687円 "
+            "2026年5月27日より発売 新商品 季節限定 "
+            "一時的な欠品または早期に販売終了する場合がございます。",
+        ),
+    )
+    assert starbucks is not None
+    assert starbucks.product_name == "バナナ アフォガート フラペチーノ®"
+    assert str(starbucks.release_date) == "2026-05-27"
+    assert starbucks.price == 687
+    assert "販売終了" not in (starbucks.detected_keywords or "")
+
+    negative_only = candidate_detector.build_candidate_from_source_log(
+        source=starbucks_source,
+        source_log=make_source_log(
+            "販売終了のお知らせ",
+            "https://stories.starbucks.co.jp/press/2026/ended/",
+            "販売終了 完売 在庫なし 受付終了 終了しました",
+        ),
+    )
+    assert negative_only is None
+
 
 def assert_collector_smoke() -> None:
     db = make_session()
     sanrio_url = "https://www.sanrio.co.jp/news/goods/feed.xml"
     bandai_url = "https://www.bandai.co.jp/catalog/feed.xml"
+    starbucks_url = "https://stories.starbucks.co.jp/press/feed.xml"
     sanrio_source = make_source(
         db,
         source_name="サンリオ公式",
@@ -197,10 +247,18 @@ def assert_collector_smoke() -> None:
         url=bandai_url,
         target_category="アニメ系ガチャ",
     )
+    starbucks_source = make_source(
+        db,
+        source_name="スターバックス公式",
+        source_type="official",
+        url=starbucks_url,
+        target_category="スタバ",
+    )
 
     sanrio_events: list[tuple[str, str, str, dict | None]] = []
     bandai_events: list[tuple[str, str, str, dict | None]] = []
-    fixtures = {sanrio_url: SANRIO_RSS, bandai_url: BANDAI_RSS}
+    starbucks_events: list[tuple[str, str, str, dict | None]] = []
+    fixtures = {sanrio_url: SANRIO_RSS, bandai_url: BANDAI_RSS, starbucks_url: STARBUCKS_RSS}
     with patched_fetch(fixtures):
         sanrio_result = collectors.run_collector(
             db,
@@ -244,6 +302,24 @@ def assert_collector_smoke() -> None:
         assert bandai_candidate.price == 3300
         assert any("candidate_limit_reached" in item for item in bandai_result.skipped_details)
         assert any(event[0] == "candidate_limit" for event in bandai_events)
+
+        starbucks_result = collectors.run_collector(
+            db,
+            source=starbucks_source,
+            max_items=10,
+            max_candidates=1,
+            respect_robots=False,
+            minimum_interval_seconds=0,
+            progress_callback=lambda *event: starbucks_events.append(event),
+        )
+        assert len(starbucks_result.candidates) == 1
+        starbucks_candidate = starbucks_result.candidates[0]
+        assert starbucks_candidate.product_name == "バナナ アフォガート フラペチーノ®"
+        assert str(starbucks_candidate.release_date) == "2026-05-27"
+        assert starbucks_candidate.price == 687
+        assert "販売終了" not in (starbucks_candidate.detected_keywords or "")
+        assert any("candidate_limit_reached" in item for item in starbucks_result.skipped_details)
+        assert any(event[0] == "candidate_limit" for event in starbucks_events)
 
 
 def main() -> None:
