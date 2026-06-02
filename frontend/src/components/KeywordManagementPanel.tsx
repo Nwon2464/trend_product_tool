@@ -19,7 +19,7 @@ export function KeywordManagementPanel({
     <section className="panel">
       <div className="section-heading">
         <div className="section-title-group">
-          <h2>検出キーワード管理</h2>
+          <h2>注目キーワード管理</h2>
           <span className="count-badge">現在 {keywords.length} 件</span>
         </div>
         <div className="heading-actions">
@@ -29,7 +29,7 @@ export function KeywordManagementPanel({
         </div>
       </div>
       <p className="section-description">
-        有効なキーワードはスクレイピング時の商品候補検出・カテゴリ判定・スコアリングに使われます。無効なキーワードは保存されますが、検出には使われません。
+        気になる商品ジャンルや探したい言葉を登録します。有効なキーワードは情報収集時に商品候補を見つける目印として使われます。
       </p>
       <SimpleTable
         headers={["カテゴリ", "キーワード", "優先度", "有効", "メモ", "操作"]}

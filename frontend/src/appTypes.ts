@@ -97,5 +97,6 @@ export type Tab =
   | "products"
   | "collection"
   | "source-management"
+  | "developer-settings"
   | "keywords"
   | "notifications";

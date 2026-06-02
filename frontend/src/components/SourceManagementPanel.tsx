@@ -6,7 +6,6 @@ type SourceManagementPanelProps = {
   sources: Source[];
   sourceTypeLabels: Record<string, string>;
   onCreateSource: () => void;
-  onToggleSource: (source: Source) => void;
   onDeleteSource: (source: Source) => void;
 };
 
@@ -14,7 +13,6 @@ export function SourceManagementPanel({
   sources,
   sourceTypeLabels,
   onCreateSource,
-  onToggleSource,
   onDeleteSource,
 }: SourceManagementPanelProps) {
   return (
@@ -30,16 +28,7 @@ export function SourceManagementPanel({
       </div>
       <h3 className="subheading">登録済み情報源</h3>
       <SimpleTable
-        headers={[
-          "名前",
-          "種類",
-          "リンク",
-          "カテゴリ",
-          "優先度",
-          "有効",
-          "メモ",
-          "操作",
-        ]}
+        headers={["名前", "種類", "リンク", "カテゴリ", "優先度", "メモ", "操作"]}
         rows={sources.map((source) => [
           source.source_name,
           sourceTypeLabels[source.source_type] ?? source.source_type,
@@ -48,15 +37,8 @@ export function SourceManagementPanel({
           </a>,
           source.target_category,
           String(source.priority),
-          source.is_active ? "有効" : "無効",
           source.memo ?? "",
           <div className="actions" key={source.id}>
-            <button
-              className="secondary-button"
-              onClick={() => onToggleSource(source)}
-            >
-              {source.is_active ? "無効化" : "有効化"}
-            </button>
             <button
               className="icon-button danger"
               onClick={() => onDeleteSource(source)}

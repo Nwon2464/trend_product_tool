@@ -29,6 +29,7 @@ export function useScrapingTargets({
     const sourceNameQuery = scrapingPrep.sourceName.trim().toLowerCase();
     return sortSourcesByNewest(sources)
       .filter((source) => {
+        if (!source.is_active) return false;
         const matchesCategory =
           scrapingPrep.category === "すべて" ||
           source.target_category === scrapingPrep.category;

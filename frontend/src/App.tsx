@@ -25,6 +25,7 @@ import { ConfirmDeleteLogsModal } from "./components/ConfirmDeleteLogsModal";
 import { EvidenceModal } from "./components/EvidenceModal";
 import { KeywordFormModal } from "./components/KeywordFormModal";
 import { KeywordManagementPanel } from "./components/KeywordManagementPanel";
+import { DeveloperSettingsPanel } from "./components/DeveloperSettingsPanel";
 import { ProductForm } from "./components/ProductForm";
 import { ProductListPanel } from "./components/ProductListPanel";
 import { ScrapingModal } from "./components/ScrapingModal";
@@ -613,6 +614,38 @@ export default function App() {
     }
   }
 
+  async function setAllSourcesActive(isActive: boolean) {
+    const targets = sources.filter((source) => source.is_active !== isActive);
+    if (targets.length === 0) {
+      addToast(
+        "info",
+        isActive
+          ? "すでに全ての情報源が有効です"
+          : "すでに全ての情報源が無効です",
+      );
+      return;
+    }
+
+    try {
+      await Promise.all(
+        targets.map((source) =>
+          api.updateSource(source.id, { is_active: isActive }),
+        ),
+      );
+      addToast(
+        "success",
+        isActive
+          ? `情報源を一括で有効化しました（${targets.length}件）`
+          : `情報源を一括で無効化しました（${targets.length}件）`,
+      );
+      await loadAll();
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "情報源の一括更新に失敗しました";
+      addToast("error", errorMessage);
+    }
+  }
+
   async function deleteSource(source: Source) {
     try {
       await api.deleteSource(source.id);
@@ -1129,13 +1162,19 @@ export default function App() {
           className={activeTab === "keywords" ? "active" : ""}
           onClick={() => setActiveTab("keywords")}
         >
-          キーワード
+          注目キーワード
         </button>
         <button
           className={activeTab === "notifications" ? "active" : ""}
           onClick={() => setActiveTab("notifications")}
         >
           通知ログ
+        </button>
+        <button
+          className={activeTab === "developer-settings" ? "active" : ""}
+          onClick={() => setActiveTab("developer-settings")}
+        >
+          開発設定
         </button>
       </nav>
 
@@ -1199,8 +1238,16 @@ export default function App() {
             sources={sources}
             sourceTypeLabels={sourceTypeLabels}
             onCreateSource={openSourceCreateModal}
-            onToggleSource={(source) => void toggleSource(source)}
             onDeleteSource={(source) => void deleteSource(source)}
+          />
+        )}
+
+        {activeTab === "developer-settings" && (
+          <DeveloperSettingsPanel
+            sources={sources}
+            sourceTypeLabels={sourceTypeLabels}
+            onToggleSource={(source) => void toggleSource(source)}
+            onSetAllSourcesActive={(isActive) => void setAllSourcesActive(isActive)}
           />
         )}
 

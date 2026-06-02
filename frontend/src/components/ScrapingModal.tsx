@@ -196,24 +196,28 @@ export function ScrapingModal({
                 </label>
               </div>
               <div className="url-panel">
-                <div className="url-panel-header">
-                  <h3 className="subheading">対象URL</h3>
-                </div>
                 {scrapingUrls.length > 0 ? (
                   <>
                     <div className="url-selection-bar">
-                      <button
-                        className="secondary-button select-all-button"
-                        disabled={isScrapingRunning || scrapingUrls.length === 0}
-                        onClick={onToggleAllTargets}
-                      >
-                        {selectedScrapingKeys.length === scrapingUrls.length
-                          ? "選択解除"
-                          : "すべて選択"}
-                      </button>
+                      <div className="url-selection-title">
+                        <div>
+                          <h3>Scraping対象</h3>
+                          <span>有効な情報源 {scrapingStatusSummary.total}件</span>
+                        </div>
+                        <button
+                          className="secondary-button select-all-button select-all-button-under-title"
+                          disabled={
+                            isScrapingRunning || scrapingUrls.length === 0
+                          }
+                          onClick={onToggleAllTargets}
+                        >
+                          {selectedScrapingKeys.length === scrapingUrls.length
+                            ? "選択解除"
+                            : "すべて選択"}
+                        </button>
+                      </div>
                       <div className="scraping-summary">
                         <div className="scraping-summary-line">
-                          <span>対象URL {scrapingStatusSummary.total}件</span>
                           <span>選択中 {scrapingStatusSummary.selected}件</span>
                           <span>
                             取得完了 {scrapingStatusSummary.completed}件
@@ -244,57 +248,75 @@ export function ScrapingModal({
                         </span>
                       </div>
                     </div>
-                    <ul className="url-list">
-                      {scrapingUrls.map((source) => {
-                        const progress = scrapingProgress[source.key];
-                        const rowStatus = progress?.status ?? "待機中";
-                        const isCurrent = rowStatus === "実行中";
-                        return (
-                          <li
-                            className={
-                              isCurrent
-                                ? "url-list-item url-list-item-current"
-                                : "url-list-item"
-                            }
-                            key={source.key}
-                          >
-                            <div className="url-row">
-                              <label
-                                className="url-checkbox"
-                                title="一括Scrapingに含める"
+                    <div className="url-table-wrap">
+                      <table className="url-table">
+                        <thead>
+                          <tr>
+                            <th aria-label="選択" />
+                            <th>情報源名</th>
+                            <th>URL</th>
+                            <th>種別</th>
+                            <th>状態</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {scrapingUrls.map((source) => {
+                            const progress = scrapingProgress[source.key];
+                            const isCurrent = progress?.status === "実行中";
+                            return (
+                              <tr
+                                className={
+                                  isCurrent ? "url-table-row-current" : undefined
+                                }
+                                key={source.key}
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedScrapingKeys.includes(
-                                    source.key,
-                                  )}
-                                  disabled={isScrapingRunning}
-                                  onChange={() => onToggleTarget(source.key)}
-                                />
-                              </label>
-                              <div className="url-main">
-                                <div className="url-title-row">
-                                  <strong>{source.name}</strong>
+                                <td>
+                                  <label
+                                    className="url-checkbox"
+                                    title="一括Scrapingに含める"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedScrapingKeys.includes(
+                                        source.key,
+                                      )}
+                                      disabled={isScrapingRunning}
+                                      onChange={() => onToggleTarget(source.key)}
+                                    />
+                                  </label>
+                                </td>
+                                <td>
+                                  <span className="url-source-name">
+                                    {source.name}
+                                  </span>
+                                </td>
+                                <td>
+                                  <a
+                                    className="url-table-link"
+                                    href={source.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={source.url}
+                                  >
+                                    {source.url}
+                                  </a>
+                                </td>
+                                <td>
                                   <span className="url-kind-label">
                                     {source.kind}
                                   </span>
-                                </div>
-                                <a
-                                  href={source.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  {source.url}
-                                </a>
-                              </div>
-                              <div className="url-progress">
-                                <ScrapingStatusBadge status={progress?.status} />
-                              </div>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                                </td>
+                                <td>
+                                  <div className="url-progress">
+                                    <ScrapingStatusBadge status={progress?.status} />
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </>
                 ) : (
                   <p className="muted-text">
