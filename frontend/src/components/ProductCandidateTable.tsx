@@ -9,10 +9,8 @@ import {
 } from "../utils/candidateStatus";
 import {
   categoryTone,
-  detectedKeywordList,
   expectationLabel,
   formatDate,
-  formatDetectedKeywords,
   formatPriceYen,
   scoreClass,
 } from "../utils/formatters";
@@ -38,28 +36,6 @@ type ProductCandidateTableProps = {
   onPrefillProduct: (candidate: ProductCandidate) => void;
   onDeleteCandidate: (candidate: ProductCandidate) => void;
 };
-
-function DetectedKeywordBadges({ candidate }: { candidate: ProductCandidate }) {
-  const keywords = detectedKeywordList(candidate.detected_keywords);
-  if (keywords.length === 0) return <span className="muted-text">-</span>;
-  const visibleKeywords = keywords.slice(0, 3);
-  const hiddenCount = keywords.length - visibleKeywords.length;
-  return (
-    <div
-      className="keyword-badges"
-      title={formatDetectedKeywords(candidate.detected_keywords)}
-    >
-      {visibleKeywords.map((keyword) => (
-        <span className="keyword-badge" key={keyword}>
-          {keyword}
-        </span>
-      ))}
-      {hiddenCount > 0 && (
-        <span className="keyword-badge keyword-badge-more">+{hiddenCount}</span>
-      )}
-    </div>
-  );
-}
 
 export function CandidateStatusButtons({
   candidate,
@@ -154,8 +130,6 @@ export function ProductCandidateTable({
                 onChange={onCandidateSortChange}
                 key="expectation"
               />,
-              "検出理由",
-              "キーワード",
               "情報元",
               "操作",
             ]}
@@ -191,14 +165,6 @@ export function ProductCandidateTable({
                   {candidate.profit_expectation} /{" "}
                   {expectationLabel(candidate.profit_expectation)}
                 </span>,
-                <span
-                  className="candidate-reason-clamp"
-                  key={candidate.id}
-                  title={candidate.detected_reason}
-                >
-                  {candidate.detected_reason}
-                </span>,
-                <DetectedKeywordBadges candidate={candidate} key={candidate.id} />,
                 <a
                   className="source-link-button"
                   href={candidate.source_url}

@@ -548,22 +548,12 @@ td small {
 
 .candidate-category th:nth-child(7),
 .candidate-category td:nth-child(7) {
-  width: 190px;
+  width: 88px;
 }
 
 .candidate-category th:nth-child(8),
 .candidate-category td:nth-child(8) {
-  width: 150px;
-}
-
-.candidate-category th:nth-child(9),
-.candidate-category td:nth-child(9) {
-  width: 78px;
-}
-
-.candidate-category th:nth-child(10),
-.candidate-category td:nth-child(10) {
-  width: 224px;
+  width: 228px;
 }
 
 .candidate-category th,
@@ -634,8 +624,7 @@ td small {
 
 .clamp-1,
 .clamp-2,
-.candidate-title-clamp,
-.candidate-reason-clamp {
+.candidate-title-clamp {
   display: -webkit-box;
   line-height: 1.45;
   min-width: 0;
@@ -649,8 +638,7 @@ td small {
 }
 
 .clamp-2,
-.candidate-title-clamp,
-.candidate-reason-clamp {
+.candidate-title-clamp {
   -webkit-line-clamp: 2;
   max-height: 2.9em;
 }
