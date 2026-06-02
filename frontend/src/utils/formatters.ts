@@ -1,9 +1,7 @@
-import { candidateStatusLabels } from "../constants";
 import type { SourceLogStatus } from "../appTypes";
 import type {
   Product,
   ProductCandidate,
-  ProductCandidateStatus,
   ProductInput,
   ScrapingJobEvent,
   Source,
@@ -102,10 +100,6 @@ export function expectationLabel(score: number) {
   if (score >= 60) return "注目";
   if (score >= 40) return "低め";
   return "保留";
-}
-
-export function candidateStatusLabel(status: ProductCandidateStatus) {
-  return candidateStatusLabels[status] ?? status;
 }
 
 export function categoryTone(category: string) {

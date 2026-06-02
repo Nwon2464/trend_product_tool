@@ -13,6 +13,34 @@ export type ScrapingTargetProgress = {
   cooldownUntil?: number;
 };
 
+export type ScrapingPrep = {
+  category: string;
+  status: string;
+  sourceName: string;
+  candidateLimit: string;
+};
+
+export type ScrapingTarget = {
+  key: string;
+  id: number;
+  name: string;
+  url: string;
+  category: string;
+  kind: string;
+};
+
+export type ScrapingStatusSummary = {
+  total: number;
+  selected: number;
+  pending: number;
+  running: number;
+  completed: number;
+  failed: number;
+  skipped: number;
+  currentSourceName: string;
+  progressCount: number;
+};
+
 export type TerminalLogLevel =
   | "info"
   | "start"

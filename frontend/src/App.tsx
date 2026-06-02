@@ -6,28 +6,12 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  Download,
-  ExternalLink,
-  FileText,
-  Loader,
-  PackagePlus,
-  Plus,
-  SendToBack,
-  RefreshCw,
-  Search,
-  Trash2,
-  X,
-  XCircle,
-} from "lucide-react";
+import { RefreshCw, Trash2, X } from "lucide-react";
 import { API_BASE_URL, api } from "./api";
 import type {
   ProductFilters,
+  ScrapingPrep,
   ScrapingTargetProgress,
-  ScrapingTargetStatus,
   SourceLogFilter,
   Tab,
   TerminalLogLevel,
@@ -35,21 +19,27 @@ import type {
   ToastMessage,
   ToastType,
 } from "./appTypes";
+import { CollectionPanel } from "./components/CollectionPanel";
+import { ConfirmDeleteLogsModal } from "./components/ConfirmDeleteLogsModal";
+import { EvidenceModal } from "./components/EvidenceModal";
+import { KeywordFormModal } from "./components/KeywordFormModal";
+import { KeywordManagementPanel } from "./components/KeywordManagementPanel";
 import { ProductForm } from "./components/ProductForm";
 import { ProductListPanel } from "./components/ProductListPanel";
+import { ScrapingModal } from "./components/ScrapingModal";
 import { SimpleTable } from "./components/SimpleTable";
+import { SourceFormModal } from "./components/SourceFormModal";
+import { SourceManagementPanel } from "./components/SourceManagementPanel";
 import { ToastContainer } from "./components/ToastContainer";
 import {
   SCRAPING_MIN_INTERVAL_SECONDS,
-  candidateStatusActions,
   emptyKeyword,
   emptyProduct,
   emptySource,
   sourceTypeLabels,
   sourceTypes,
-  statusOptions,
 } from "./constants";
-import type { CandidateStatusAction } from "./constants";
+import { useScrapingTargets } from "./hooks/useScrapingTargets";
 import type {
   Keyword,
   KeywordInput,
@@ -64,20 +54,16 @@ import type {
   SourceInput,
   SourceLog,
 } from "./types";
+import { candidateStatusLabel } from "./utils/candidateStatus";
 import {
-  candidateStatusLabel,
-  categoryTone,
-  detectedKeywordList,
   expectationLabel,
   formatDate,
   formatDetectedKeywords,
-  formatPriceYen,
   formatTerminalTime,
   getPayloadNumber,
   getPayloadString,
   getSourceLogStatus,
   messageForSkipEvent,
-  scoreClass,
   scoreLabel,
   sortSourcesByNewest,
   toProductInput,
@@ -115,7 +101,7 @@ export default function App() {
   const [isDeleteLogsModalOpen, setIsDeleteLogsModalOpen] = useState(false);
   const [evidenceCandidate, setEvidenceCandidate] =
     useState<ProductCandidate | null>(null);
-  const [scrapingPrep, setScrapingPrep] = useState({
+  const [scrapingPrep, setScrapingPrep] = useState<ScrapingPrep>({
     category: "すべて",
     status: "すべて",
     sourceName: "",
@@ -243,127 +229,20 @@ export default function App() {
     [candidatesBySourceLogId, filteredSourceLogs, productSourceUrls],
   );
 
-  const scrapingUrls = useMemo(() => {
-    const sourceNameQuery = scrapingPrep.sourceName.trim().toLowerCase();
-    return sortSourcesByNewest(sources)
-      .filter((source) => {
-        const matchesCategory =
-          scrapingPrep.category === "すべて" ||
-          source.target_category === scrapingPrep.category;
-        const matchesSourceName =
-          sourceNameQuery === "" ||
-          source.source_name.toLowerCase().includes(sourceNameQuery);
-        return matchesCategory && matchesSourceName;
-      })
-      .map((source) => ({
-        key: `registered-${source.id}`,
-        id: source.id,
-        name: source.source_name,
-        url: source.url,
-        category: source.target_category,
-        kind: "登録済み",
-      }));
-  }, [scrapingPrep.category, scrapingPrep.sourceName, sources]);
-
-  const selectedScrapingTargets = useMemo(
-    () =>
-      scrapingUrls.filter((source) =>
-        selectedScrapingKeys.includes(source.key),
-      ),
-    [scrapingUrls, selectedScrapingKeys],
-  );
-
-  const sourceCooldownUntilById = useMemo(() => {
-    const values = new Map<number, number>();
-    sourceLogs.forEach((log) => {
-      const detectedAt = new Date(log.detected_at).getTime();
-      if (Number.isNaN(detectedAt)) return;
-      const cooldownUntil = detectedAt + SCRAPING_MIN_INTERVAL_SECONDS * 1000;
-      const current = values.get(log.source_id) ?? 0;
-      if (cooldownUntil > current) {
-        values.set(log.source_id, cooldownUntil);
-      }
-    });
-    return values;
-  }, [sourceLogs]);
-
-  const getScrapingCooldownUntil = useCallback(
-    (target: (typeof scrapingUrls)[number]) => {
-      const progressCooldownUntil =
-        scrapingProgress[target.key]?.cooldownUntil ?? 0;
-      const sourceCooldownUntil =
-        typeof target.id === "number"
-          ? (sourceCooldownUntilById.get(target.id) ?? 0)
-          : 0;
-      return Math.max(progressCooldownUntil, sourceCooldownUntil);
-    },
-    [scrapingProgress, sourceCooldownUntilById],
-  );
-
-  const getScrapingRemainingSeconds = useCallback(
-    (target: (typeof scrapingUrls)[number]) => {
-      const cooldownUntil = getScrapingCooldownUntil(target);
-      return Math.max(0, Math.ceil((cooldownUntil - nowMs) / 1000));
-    },
-    [getScrapingCooldownUntil, nowMs],
-  );
-
-  const runnableScrapingTargets = useMemo(
-    () =>
-      selectedScrapingTargets.filter(
-        (target) => getScrapingRemainingSeconds(target) === 0,
-      ),
-    [getScrapingRemainingSeconds, selectedScrapingTargets],
-  );
-
-  const scrapingStatusSummary = useMemo(() => {
-    const summary = {
-      total: scrapingUrls.length,
-      selected: selectedScrapingKeys.length,
-      pending: 0,
-      running: 0,
-      completed: 0,
-      failed: 0,
-      skipped: 0,
-      currentSourceName: "",
-      progressCount: 0,
-    };
-
-    selectedScrapingTargets.forEach((source) => {
-      const status = scrapingProgress[source.key]?.status ?? "待機中";
-      if (status === "実行中") {
-        summary.running += 1;
-        if (!summary.currentSourceName) {
-          summary.currentSourceName = source.name;
-        }
-      } else if (status === "完了") {
-        summary.completed += 1;
-      } else if (status === "失敗") {
-        summary.failed += 1;
-      } else if (status === "スキップ") {
-        summary.skipped += 1;
-      } else {
-        summary.pending += 1;
-      }
-    });
-
-    summary.progressCount =
-      summary.completed + summary.failed + summary.skipped;
-    return summary;
-  }, [
+  const {
+    scrapingUrls,
+    runnableScrapingTargets,
+    scrapingStatusSummary,
+    scrapingProgressTotal,
+    scrapingProgressPercent,
+  } = useScrapingTargets({
+    sources,
+    sourceLogs,
+    scrapingPrep,
+    selectedScrapingKeys,
     scrapingProgress,
-    scrapingUrls.length,
-    selectedScrapingKeys.length,
-    selectedScrapingTargets,
-  ]);
-
-  const scrapingProgressTotal = scrapingStatusSummary.selected;
-  const scrapingProgressPercent =
-    scrapingProgressTotal === 0
-      ? 0
-      : Math.round(
-          (scrapingStatusSummary.progressCount / scrapingProgressTotal) * 100,
-        );
+    nowMs,
+  });
 
   const appendTerminalLine = useCallback(
     (level: TerminalLogLevel, message: string) => {
@@ -1116,93 +995,6 @@ export default function App() {
     }
   }
 
-  function renderCandidateStatusButton(
-    candidate: ProductCandidate,
-    action: CandidateStatusAction,
-  ) {
-    const Icon = action.icon;
-    const isActive = candidate.candidate_status === action.status;
-    const isUpdating = updatingCandidateIds.has(candidate.id);
-    return (
-      <button
-        className={`candidate-icon-button candidate-icon-${action.className}${isActive ? " active" : ""}`}
-        disabled={isUpdating}
-        key={action.status}
-        onClick={() => void updateCandidateStatus(candidate, action.status)}
-        title={isActive ? action.activeLabel : action.label}
-        type="button"
-      >
-        <Icon
-          size={16}
-          fill={
-            isActive && action.status === "watching" ? "currentColor" : "none"
-          }
-        />
-      </button>
-    );
-  }
-
-  function renderDetectedKeywordBadges(candidate: ProductCandidate) {
-    const keywords = detectedKeywordList(candidate.detected_keywords);
-    if (keywords.length === 0) return <span className="muted-text">-</span>;
-    const visibleKeywords = keywords.slice(0, 3);
-    const hiddenCount = keywords.length - visibleKeywords.length;
-    return (
-      <div
-        className="keyword-badges"
-        title={formatDetectedKeywords(candidate.detected_keywords)}
-      >
-        {visibleKeywords.map((keyword) => (
-          <span className="keyword-badge" key={keyword}>
-            {keyword}
-          </span>
-        ))}
-        {hiddenCount > 0 && (
-          <span className="keyword-badge keyword-badge-more">
-            +{hiddenCount}
-          </span>
-        )}
-      </div>
-    );
-  }
-
-  function renderScrapingStatusBadge(status: ScrapingTargetStatus | undefined) {
-    const normalizedStatus = status ?? "待機中";
-    if (normalizedStatus === "実行中") {
-      return (
-        <span className="scraping-status-badge scraping-status-running">
-          <Loader className="spin-icon" size={14} /> 取得中...
-        </span>
-      );
-    }
-    if (normalizedStatus === "完了") {
-      return (
-        <span className="scraping-status-badge scraping-status-completed">
-          <CheckCircle size={14} /> 取得完了
-        </span>
-      );
-    }
-    if (normalizedStatus === "失敗") {
-      return (
-        <span className="scraping-status-badge scraping-status-failed">
-          <XCircle size={14} /> 失敗
-        </span>
-      );
-    }
-    if (normalizedStatus === "スキップ") {
-      return (
-        <span className="scraping-status-badge scraping-status-skipped">
-          <AlertTriangle size={14} /> スキップ
-        </span>
-      );
-    }
-    return (
-      <span className="scraping-status-badge scraping-status-pending">
-        <Clock size={14} /> 実行前
-      </span>
-    );
-  }
-
   function openProductCreateModal() {
     setEditingProductId(null);
     setProductForm(emptyProduct);
@@ -1336,284 +1128,46 @@ export default function App() {
         )}
 
         {activeTab === "keywords" && (
-          <section className="panel">
-            <div className="section-heading">
-              <div className="section-title-group">
-                <h2>検出キーワード管理</h2>
-                <span className="count-badge">現在 {keywords.length} 件</span>
-              </div>
-              <div className="heading-actions">
-                <button
-                  className="primary-button"
-                  onClick={openKeywordCreateModal}
-                >
-                  <Plus size={16} /> キーワードを追加
-                </button>
-              </div>
-            </div>
-            <p className="section-description">
-              有効なキーワードはスクレイピング時の商品候補検出・カテゴリ判定・スコアリングに使われます。無効なキーワードは保存されますが、検出には使われません。
-            </p>
-            <SimpleTable
-              headers={[
-                "カテゴリ",
-                "キーワード",
-                "優先度",
-                "有効",
-                "メモ",
-                "操作",
-              ]}
-              rows={keywords.map((keyword) => [
-                keyword.category,
-                keyword.keyword,
-                String(keyword.priority),
-                keyword.is_active ? "有効" : "無効",
-                keyword.memo ?? "",
-                <div className="actions" key={keyword.id}>
-                  <button
-                    className="secondary-button"
-                    onClick={() => void toggleKeyword(keyword)}
-                  >
-                    {keyword.is_active ? "検出から外す" : "検出に使う"}
-                  </button>
-                  <button
-                    className="icon-button danger"
-                    onClick={() =>
-                      void api.deleteKeyword(keyword.id).then(loadAll)
-                    }
-                    title="削除"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>,
-              ])}
-            />
-          </section>
+          <KeywordManagementPanel
+            keywords={keywords}
+            onCreateKeyword={openKeywordCreateModal}
+            onToggleKeyword={(keyword) => void toggleKeyword(keyword)}
+            onDeleteKeyword={(keywordId) =>
+              void api.deleteKeyword(keywordId).then(loadAll)
+            }
+          />
         )}
 
         {activeTab === "collection" && (
-          <section className="panel">
-            <div className="section-heading">
-              <h2>情報収集</h2>
-              <span>
-                商品候補 {sortedProductCandidates.length}件 / 補助ログ{" "}
-                {filteredSourceLogs.length}件
-              </span>
-            </div>
-            <div className="toolbar-row">
-              <button className="primary-button" onClick={openScrapingModal}>
-                <Search size={16} /> スクレイピング準備
-              </button>
-              <div className="toolbar-actions">
-                <button
-                  className="secondary-button"
-                  disabled={deletableUnregisteredLogs.length === 0}
-                  onClick={() => setIsDeleteLogsModalOpen(true)}
-                >
-                  表示中の未登録を削除
-                </button>
-                <label className="compact-filter">
-                  表示
-                  <select
-                    value={sourceLogFilter}
-                    onChange={(event) =>
-                      setSourceLogFilter(event.target.value as SourceLogFilter)
-                    }
-                  >
-                    <option value="すべて">すべて</option>
-                    <option value="候補検出">候補検出</option>
-                    <option value="登録済み">登録済み</option>
-                    <option value="未登録">未登録</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-            {candidateGroups.length > 0 ? (
-              <div className="candidate-board">
-                {candidateGroups.map((group) => (
-                  <section
-                    className={`candidate-category category-${categoryTone(group.category)}`}
-                    key={group.category}
-                  >
-                    <div className="candidate-category-header">
-                      <div>
-                        <h3>{group.category}</h3>
-                        <span>
-                          {group.candidates.length}件 / 高期待 {group.highCount}
-                          件 / 平均 {group.averageExpectation}
-                        </span>
-                      </div>
-                    </div>
-                    <SimpleTable
-                      headers={[
-                        "商品名候補",
-                        "状態",
-                        "価格",
-                        "発売日",
-                        "販売元",
-                        "利益期待度",
-                        "検出理由",
-                        "キーワード",
-                        "情報元",
-                        "操作",
-                      ]}
-                      rows={group.candidates.map((candidate) => ({
-                        className: `candidate-row candidate-row-${candidate.candidate_status}`,
-                        cells: [
-                          <span
-                            className="candidate-title-clamp"
-                            key={candidate.id}
-                            title={candidate.product_name}
-                          >
-                            {candidate.product_name}
-                          </span>,
-                          <span
-                            className={`candidate-status-badge candidate-status-${candidate.candidate_status}`}
-                            key={candidate.id}
-                          >
-                            {candidateStatusLabel(candidate.candidate_status)}
-                          </span>,
-                          formatPriceYen(candidate.price),
-                          formatDate(candidate.release_date),
-                          <span
-                            className="clamp-1"
-                            key={candidate.id}
-                            title={candidate.sales_store ?? "-"}
-                          >
-                            {candidate.sales_store ?? "-"}
-                          </span>,
-                          <span
-                            className={`score score-${scoreClass(candidate.profit_expectation)}`}
-                            key={candidate.id}
-                          >
-                            {candidate.profit_expectation} /{" "}
-                            {expectationLabel(candidate.profit_expectation)}
-                          </span>,
-                          <span
-                            className="candidate-reason-clamp"
-                            key={candidate.id}
-                            title={candidate.detected_reason}
-                          >
-                            {candidate.detected_reason}
-                          </span>,
-                          renderDetectedKeywordBadges(candidate),
-                          <a
-                            className="source-link-button"
-                            href={candidate.source_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            key={candidate.id}
-                            title="情報元を開く"
-                          >
-                            <ExternalLink size={14} /> 開く
-                          </a>,
-                          <div className="candidate-actions" key={candidate.id}>
-                            <button
-                              className="candidate-icon-button"
-                              onClick={() => setEvidenceCandidate(candidate)}
-                              title="根拠を見る"
-                              type="button"
-                            >
-                              <FileText size={16} />
-                            </button>
-                            {candidateStatusActions.map((action) =>
-                              renderCandidateStatusButton(candidate, action),
-                            )}
-                            <button
-                              className="candidate-icon-button candidate-register-button"
-                              onClick={() =>
-                                prefillProductFromCandidate(candidate)
-                              }
-                              title="商品登録へ"
-                              type="button"
-                            >
-                              <PackagePlus size={16} />
-                            </button>
-                            <button
-                              className="candidate-icon-button candidate-delete-button"
-                              onClick={() => void deleteProductCandidate(candidate)}
-                              title="商品候補を削除"
-                              type="button"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>,
-                        ],
-                      }))}
-                    />
-                  </section>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">
-                <h3>商品候補がありません</h3>
-                <p>
-                  スクレイピング準備から情報源を選択して候補を収集してください。
-                </p>
-              </div>
-            )}
-          </section>
+          <CollectionPanel
+            productCandidateCount={sortedProductCandidates.length}
+            sourceLogCount={filteredSourceLogs.length}
+            deletableUnregisteredLogCount={deletableUnregisteredLogs.length}
+            sourceLogFilter={sourceLogFilter}
+            candidateGroups={candidateGroups}
+            updatingCandidateIds={updatingCandidateIds}
+            onOpenScrapingModal={openScrapingModal}
+            onOpenDeleteLogsModal={() => setIsDeleteLogsModalOpen(true)}
+            onSourceLogFilterChange={setSourceLogFilter}
+            onShowEvidence={setEvidenceCandidate}
+            onUpdateStatus={(candidate, candidateStatus) =>
+              void updateCandidateStatus(candidate, candidateStatus)
+            }
+            onPrefillProduct={prefillProductFromCandidate}
+            onDeleteCandidate={(candidate) =>
+              void deleteProductCandidate(candidate)
+            }
+          />
         )}
 
         {activeTab === "source-management" && (
-          <section className="panel">
-            <div className="section-heading">
-              <h2>情報源管理</h2>
-              <div className="heading-actions">
-                <span>{sources.length}件</span>
-                <button
-                  className="primary-button"
-                  onClick={openSourceCreateModal}
-                >
-                  <Plus size={16} /> 情報源URLを登録
-                </button>
-              </div>
-            </div>
-            <h3 className="subheading">登録済み情報源</h3>
-            <SimpleTable
-              headers={[
-                "名前",
-                "種類",
-                "リンク",
-                "カテゴリ",
-                "優先度",
-                "有効",
-                "メモ",
-                "操作",
-              ]}
-              rows={sources.map((source) => [
-                source.source_name,
-                sourceTypeLabels[source.source_type] ?? source.source_type,
-                <a
-                  href={source.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  key={source.id}
-                >
-                  {source.url}
-                </a>,
-                source.target_category,
-                String(source.priority),
-                source.is_active ? "有効" : "無効",
-                source.memo ?? "",
-                <div className="actions" key={source.id}>
-                  <button
-                    className="secondary-button"
-                    onClick={() => void toggleSource(source)}
-                  >
-                    {source.is_active ? "無効化" : "有効化"}
-                  </button>
-                  <button
-                    className="icon-button danger"
-                    onClick={() => void deleteSource(source)}
-                    title="削除"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>,
-              ])}
-            />
-          </section>
+          <SourceManagementPanel
+            sources={sources}
+            sourceTypeLabels={sourceTypeLabels}
+            onCreateSource={openSourceCreateModal}
+            onToggleSource={(source) => void toggleSource(source)}
+            onDeleteSource={(source) => void deleteSource(source)}
+          />
         )}
 
         {activeTab === "notifications" && (
@@ -1722,754 +1276,70 @@ export default function App() {
       )}
 
       {isSourceModalOpen && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={closeSourceModal}
-        >
-          <div
-            className="source-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="source-modal-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h2 id="source-modal-title">情報源URLを登録</h2>
-              <button
-                className="icon-button"
-                onClick={closeSourceModal}
-                title="閉じる"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <form
-              className="source-form source-modal-form"
-              onSubmit={submitSource}
-            >
-              <label>
-                情報源名
-                <input
-                  placeholder="情報源名"
-                  value={sourceForm.source_name}
-                  onChange={(event) =>
-                    setSourceForm({
-                      ...sourceForm,
-                      source_name: event.target.value,
-                    })
-                  }
-                  required
-                />
-              </label>
-              <label>
-                URL
-                <input
-                  placeholder="リンク"
-                  value={sourceForm.url}
-                  onChange={(event) =>
-                    setSourceForm({ ...sourceForm, url: event.target.value })
-                  }
-                  required
-                />
-              </label>
-              <label>
-                対象カテゴリ
-                <input
-                  placeholder="対象カテゴリ"
-                  value={sourceForm.target_category}
-                  onChange={(event) =>
-                    setSourceForm({
-                      ...sourceForm,
-                      target_category: event.target.value,
-                    })
-                  }
-                  required
-                />
-              </label>
-              <label>
-                source_type
-                <select
-                  value={sourceForm.source_type}
-                  onChange={(event) =>
-                    setSourceForm({
-                      ...sourceForm,
-                      source_type: event.target.value,
-                    })
-                  }
-                >
-                  {sourceTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {sourceTypeLabels[type]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                priority
-                <input
-                  type="number"
-                  min="1"
-                  max="3"
-                  value={sourceForm.priority}
-                  onChange={(event) =>
-                    setSourceForm({
-                      ...sourceForm,
-                      priority: Number(event.target.value),
-                    })
-                  }
-                />
-              </label>
-              <label>
-                memo
-                <input
-                  placeholder="メモ"
-                  value={sourceForm.memo}
-                  onChange={(event) =>
-                    setSourceForm({ ...sourceForm, memo: event.target.value })
-                  }
-                />
-              </label>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={sourceForm.is_active}
-                  onChange={(event) =>
-                    setSourceForm({
-                      ...sourceForm,
-                      is_active: event.target.checked,
-                    })
-                  }
-                />
-                is_active
-              </label>
-              <div className="modal-actions wide">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={closeSourceModal}
-                >
-                  キャンセル
-                </button>
-                <button className="primary-button">
-                  <Plus size={16} /> 情報源URLを登録
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <SourceFormModal
+          sourceForm={sourceForm}
+          sourceTypes={sourceTypes}
+          sourceTypeLabels={sourceTypeLabels}
+          onChange={setSourceForm}
+          onSubmit={submitSource}
+          onClose={closeSourceModal}
+        />
       )}
 
       {isKeywordModalOpen && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={closeKeywordModal}
-        >
-          <div
-            className="keyword-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="keyword-modal-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h2 id="keyword-modal-title">検出キーワードを追加</h2>
-              <button
-                className="icon-button"
-                onClick={closeKeywordModal}
-                title="閉じる"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <form className="keyword-modal-form" onSubmit={submitKeyword}>
-              <label>
-                カテゴリ
-                <input
-                  placeholder="例: ポケモンカード"
-                  value={keywordForm.category}
-                  onChange={(event) =>
-                    setKeywordForm({
-                      ...keywordForm,
-                      category: event.target.value,
-                    })
-                  }
-                  required
-                />
-              </label>
-              <label>
-                キーワード
-                <input
-                  placeholder="例: ポケカ 再販"
-                  value={keywordForm.keyword}
-                  onChange={(event) =>
-                    setKeywordForm({
-                      ...keywordForm,
-                      keyword: event.target.value,
-                    })
-                  }
-                  required
-                />
-              </label>
-              <label>
-                priority
-                <input
-                  type="number"
-                  min="1"
-                  max="3"
-                  value={keywordForm.priority}
-                  onChange={(event) =>
-                    setKeywordForm({
-                      ...keywordForm,
-                      priority: Number(event.target.value),
-                    })
-                  }
-                />
-              </label>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={keywordForm.is_active}
-                  onChange={(event) =>
-                    setKeywordForm({
-                      ...keywordForm,
-                      is_active: event.target.checked,
-                    })
-                  }
-                />
-                検出に使う
-              </label>
-              <label className="wide">
-                memo
-                <input
-                  placeholder="メモ"
-                  value={keywordForm.memo}
-                  onChange={(event) =>
-                    setKeywordForm({ ...keywordForm, memo: event.target.value })
-                  }
-                />
-              </label>
-              <div className="modal-actions wide">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={closeKeywordModal}
-                >
-                  キャンセル
-                </button>
-                <button className="primary-button">
-                  <Plus size={16} /> キーワードを追加
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <KeywordFormModal
+          keywordForm={keywordForm}
+          onChange={setKeywordForm}
+          onSubmit={submitKeyword}
+          onClose={closeKeywordModal}
+        />
       )}
 
       {isDeleteLogsModalOpen && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={() => setIsDeleteLogsModalOpen(false)}
-        >
-          <div
-            className="confirm-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delete-logs-modal-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h2 id="delete-logs-modal-title">未登録ログの削除</h2>
-              <button
-                className="icon-button"
-                onClick={() => setIsDeleteLogsModalOpen(false)}
-                title="閉じる"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <p className="confirm-text">
-              表示中の未登録ログ {deletableUnregisteredLogs.length}
-              件を削除しますか？
-            </p>
-            <p className="muted-text">
-              候補検出済み、登録済みの取得ログは削除されません。
-            </p>
-            <div className="modal-actions">
-              <button
-                className="secondary-button"
-                onClick={() => setIsDeleteLogsModalOpen(false)}
-              >
-                キャンセル
-              </button>
-              <button
-                className="primary-button danger-button"
-                onClick={() => void deleteVisibleUnregisteredLogs()}
-              >
-                削除
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDeleteLogsModal
+          deletableCount={deletableUnregisteredLogs.length}
+          onClose={() => setIsDeleteLogsModalOpen(false)}
+          onDelete={() => void deleteVisibleUnregisteredLogs()}
+        />
       )}
 
       {evidenceCandidate && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={() => setEvidenceCandidate(null)}
-        >
-          <div
-            className="evidence-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="evidence-modal-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h2 id="evidence-modal-title">候補の根拠</h2>
-              <button
-                className="icon-button"
-                onClick={() => setEvidenceCandidate(null)}
-                title="閉じる"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            {(() => {
-              const log = sourceLogs.find(
-                (item) => item.id === evidenceCandidate.source_log_id,
-              );
-              return (
-                <div className="evidence-content">
-                  <div className="evidence-grid">
-                    <div>
-                      <span>ページタイトル</span>
-                      <strong>
-                        {log?.title ?? evidenceCandidate.product_name}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>情報元URL</span>
-                      <a
-                        href={log?.url ?? evidenceCandidate.source_url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {log?.url ?? evidenceCandidate.source_url}
-                      </a>
-                    </div>
-                    <div>
-                      <span>検出日</span>
-                      <strong>{formatDate(log?.detected_at ?? null)}</strong>
-                    </div>
-                    <div>
-                      <span>source_id</span>
-                      <strong>{log?.source_id ?? "-"}</strong>
-                    </div>
-                    <div>
-                      <span>検出理由</span>
-                      <strong>{evidenceCandidate.detected_reason}</strong>
-                    </div>
-                    <div>
-                      <span>検出キーワード</span>
-                      <strong>
-                        {formatDetectedKeywords(
-                          evidenceCandidate.detected_keywords,
-                        )}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>利益期待度</span>
-                      <strong>
-                        {evidenceCandidate.profit_expectation} /{" "}
-                        {expectationLabel(evidenceCandidate.profit_expectation)}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>候補状態</span>
-                      <strong>
-                        {candidateStatusLabel(
-                          evidenceCandidate.candidate_status,
-                        )}
-                      </strong>
-                    </div>
-                  </div>
-                  <div className="evidence-raw">
-                    <span>raw_text</span>
-                    <pre>
-                      {log?.raw_text ?? "対応する取得ログが見つかりません。"}
-                    </pre>
-                  </div>
-                </div>
-              );
-            })()}
-            <div className="modal-actions">
-              {candidateStatusActions.map((action) =>
-                renderCandidateStatusButton(evidenceCandidate, action),
-              )}
-              <button
-                className="secondary-button"
-                onClick={() => setEvidenceCandidate(null)}
-              >
-                閉じる
-              </button>
-              <button
-                className="primary-button"
-                onClick={() => {
-                  prefillProductFromCandidate(evidenceCandidate);
-                  setEvidenceCandidate(null);
-                }}
-              >
-                <SendToBack size={16} /> 商品登録へ
-              </button>
-            </div>
-          </div>
-        </div>
+        <EvidenceModal
+          candidate={evidenceCandidate}
+          sourceLogs={sourceLogs}
+          updatingCandidateIds={updatingCandidateIds}
+          onClose={() => setEvidenceCandidate(null)}
+          onUpdateStatus={(candidate, candidateStatus) =>
+            void updateCandidateStatus(candidate, candidateStatus)
+          }
+          onPrefillProduct={prefillProductFromCandidate}
+        />
       )}
 
       {isScrapingModalOpen && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={closeScrapingModal}
-        >
-          <div
-            className="modal scraping-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="scraping-modal-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h2 id="scraping-modal-title">スクレイピング準備</h2>
-              <button
-                className="icon-button"
-                onClick={closeScrapingModal}
-                disabled={isScrapingRunning}
-                title="閉じる"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            {isScrapingRunning && (
-              <p className="scraping-lock-message">
-                Scraping実行中は閉じられません
-              </p>
-            )}
-            <div className="scraping-modal-layout">
-              <div className="scraping-modal-left">
-                <div className="prep-grid">
-                  <label>
-                    カテゴリ
-                    <select
-                      value={scrapingPrep.category}
-                      onChange={(event) => {
-                        setScrapingPrep({
-                          ...scrapingPrep,
-                          category: event.target.value,
-                        });
-                        appendTerminalLine(
-                          "info",
-                          `Category selected: ${event.target.value}`,
-                        );
-                      }}
-                    >
-                      <option value="すべて">すべて</option>
-                      {categories.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    ステータス
-                    <select
-                      value={scrapingPrep.status}
-                      onChange={(event) => {
-                        setScrapingPrep({
-                          ...scrapingPrep,
-                          status: event.target.value,
-                        });
-                        appendTerminalLine(
-                          "info",
-                          `Status selected: ${event.target.value}`,
-                        );
-                      }}
-                    >
-                      <option value="すべて">すべて</option>
-                      {statusOptions.map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    情報源名
-                    <input
-                      placeholder="例: 公式, 入荷Now, サンリオ"
-                      value={scrapingPrep.sourceName}
-                      onChange={(event) =>
-                        setScrapingPrep({
-                          ...scrapingPrep,
-                          sourceName: event.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    候補上限
-                    <select
-                      value={scrapingPrep.candidateLimit}
-                      onChange={(event) => {
-                        setScrapingPrep({
-                          ...scrapingPrep,
-                          candidateLimit: event.target.value,
-                        });
-                        appendTerminalLine(
-                          "info",
-                          `Candidate limit selected: ${event.target.value}`,
-                        );
-                      }}
-                    >
-                      <option value="1">1件だけ取得</option>
-                      <option value="5">5件まで取得</option>
-                      <option value="10">10件まで取得</option>
-                      <option value="30">30件まで取得</option>
-                    </select>
-                  </label>
-                  <div className="url-panel">
-                    <div className="url-panel-header">
-                      <h3 className="subheading">対象URL</h3>
-                    </div>
-                    {scrapingUrls.length > 0 ? (
-                      <>
-                        <div className="url-selection-bar">
-                          <button
-                            className="secondary-button select-all-button"
-                            disabled={
-                              isScrapingRunning || scrapingUrls.length === 0
-                            }
-                            onClick={toggleAllScrapingTargets}
-                          >
-                            {selectedScrapingKeys.length === scrapingUrls.length
-                              ? "選択解除"
-                              : "すべて選択"}
-                          </button>
-                          <div className="scraping-summary">
-                            <div className="scraping-summary-line">
-                              <span>
-                                対象URL {scrapingStatusSummary.total}件
-                              </span>
-                              <span>
-                                選択中 {scrapingStatusSummary.selected}件
-                              </span>
-                              <span>
-                                取得完了 {scrapingStatusSummary.completed}件
-                              </span>
-                              <span>失敗 {scrapingStatusSummary.failed}件</span>
-                              <span>
-                                スキップ {scrapingStatusSummary.skipped}件
-                              </span>
-                            </div>
-                            <div className="scraping-progress-row">
-                              <span>
-                                進行状況: {scrapingStatusSummary.progressCount}{" "}
-                                / {scrapingProgressTotal}
-                              </span>
-                              <div
-                                className="scraping-progress-track"
-                                aria-label="進行状況"
-                              >
-                                <div
-                                  className="scraping-progress-fill"
-                                  style={{
-                                    width: `${scrapingProgressPercent}%`,
-                                  }}
-                                />
-                              </div>
-                            </div>
-                            <span className="scraping-current-source">
-                              現在処理中:{" "}
-                              {scrapingStatusSummary.currentSourceName || "-"}
-                            </span>
-                          </div>
-                        </div>
-                        <ul className="url-list">
-                          {scrapingUrls.map((source) => {
-                            const progress = scrapingProgress[source.key];
-                            const rowStatus = progress?.status ?? "待機中";
-                            const isCurrent = rowStatus === "実行中";
-                            return (
-                              <li
-                                className={
-                                  isCurrent
-                                    ? "url-list-item url-list-item-current"
-                                    : "url-list-item"
-                                }
-                                key={source.key}
-                              >
-                                <div className="url-row">
-                                  <label
-                                    className="url-checkbox"
-                                    title="一括Scrapingに含める"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedScrapingKeys.includes(
-                                        source.key,
-                                      )}
-                                      disabled={isScrapingRunning}
-                                      onChange={() =>
-                                        toggleScrapingTarget(source.key)
-                                      }
-                                    />
-                                  </label>
-                                  <div className="url-main">
-                                    <div className="url-title-row">
-                                      <strong>{source.name}</strong>
-                                      <span className="url-kind-label">
-                                        {source.kind}
-                                      </span>
-                                    </div>
-                                    <a
-                                      href={source.url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      {source.url}
-                                    </a>
-                                  </div>
-                                  <div className="url-progress">
-                                    {renderScrapingStatusBadge(
-                                      progress?.status,
-                                    )}
-                                  </div>
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </>
-                    ) : (
-                      <p className="muted-text">
-                        このカテゴリの情報源URLはまだ登録されていません。
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="modal-actions">
-                  <button
-                    className={`primary-button ${runnableScrapingTargets.length > 0 ? "scraping-bulk-ready" : "scraping-bulk-empty"}`}
-                    onClick={() => void startScrapingFromPrep()}
-                    disabled={
-                      isScrapingRunning || runnableScrapingTargets.length === 0
-                    }
-                  >
-                    <Download size={16} />{" "}
-                    {isScrapingRunning
-                      ? "取得中..."
-                      : "選択したURLを一括Scraping"}
-                  </button>
-                  <button
-                    className="secondary-button"
-                    onClick={closeScrapingModal}
-                    disabled={isScrapingRunning}
-                    title={
-                      isScrapingRunning
-                        ? "Scraping実行中は閉じられません"
-                        : "閉じる"
-                    }
-                  >
-                    閉じる
-                  </button>
-                </div>
-              </div>
-              <div className="scraping-modal-right">
-                <div className="scraping-terminal">
-                  <div className="terminal-header">
-                    <div>
-                      <span>terminal</span>
-                      <small>上: 古いログ / 下: 最新ログ</small>
-                    </div>
-                    <strong>{isScrapingRunning ? "running" : "idle"}</strong>
-                  </div>
-                  <div className="terminal-job-status">
-                    <span>status: {activeScrapingJob?.status ?? "no job"}</span>
-                    <span>
-                      sources:{" "}
-                      {activeScrapingJob
-                        ? `${activeScrapingJob.completed_sources}/${activeScrapingJob.total_sources}`
-                        : "0/0"}
-                    </span>
-                    <span>
-                      candidates:{" "}
-                      {activeScrapingJob?.created_candidates_count ?? 0}
-                    </span>
-                    <span>
-                      failed/skipped:{" "}
-                      {activeScrapingJob
-                        ? `${activeScrapingJob.failed_sources}/${activeScrapingJob.skipped_sources}`
-                        : "0/0"}
-                    </span>
-                  </div>
-                  <div className="terminal-body" ref={terminalBodyRef}>
-                    <div className="terminal-order-marker">ログ開始 ↑</div>
-                    {terminalLines.length > 0 ? (
-                      terminalLines.map((line) => (
-                        <div
-                          className={`terminal-line terminal-line-${line.level}`}
-                          key={line.id}
-                        >
-                          <span className="terminal-time">{line.time}</span>
-                          <strong className="terminal-level">
-                            [
-                            {line.level === "success"
-                              ? "DONE"
-                              : line.level.toUpperCase()}
-                            ]
-                          </strong>
-                          <p className="terminal-message">{line.message}</p>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="terminal-line terminal-line-info">
-                        <span className="terminal-time">
-                          {formatTerminalTime()}
-                        </span>
-                        <strong className="terminal-level">[INFO]</strong>
-                        <p className="terminal-message">
-                          Scrapingを開始するとログが表示されます
-                        </p>
-                      </div>
-                    )}
-                    <div className="terminal-order-marker terminal-latest-marker">
-                      最新ログ ↓
-                    </div>
-                  </div>
-                  <div className="terminal-actions">
-                    <button
-                      className="secondary-button mini-button"
-                      onClick={() => setTerminalLines([])}
-                    >
-                      ログをクリア
-                    </button>
-                    <button
-                      className="secondary-button mini-button"
-                      onClick={scrollTerminalToLatest}
-                    >
-                      最新ログへ移動
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ScrapingModal
+          isScrapingRunning={isScrapingRunning}
+          scrapingPrep={scrapingPrep}
+          categories={categories}
+          scrapingUrls={scrapingUrls}
+          runnableScrapingTargets={runnableScrapingTargets}
+          selectedScrapingKeys={selectedScrapingKeys}
+          scrapingProgress={scrapingProgress}
+          scrapingStatusSummary={scrapingStatusSummary}
+          scrapingProgressTotal={scrapingProgressTotal}
+          scrapingProgressPercent={scrapingProgressPercent}
+          activeScrapingJob={activeScrapingJob}
+          terminalLines={terminalLines}
+          terminalBodyRef={terminalBodyRef}
+          onClose={closeScrapingModal}
+          onPrepChange={setScrapingPrep}
+          onAppendTerminalLine={(message) => appendTerminalLine("info", message)}
+          onToggleAllTargets={toggleAllScrapingTargets}
+          onToggleTarget={toggleScrapingTarget}
+          onStartScraping={() => void startScrapingFromPrep()}
+          onClearTerminal={() => setTerminalLines([])}
+          onScrollTerminalToLatest={scrollTerminalToLatest}
+        />
       )}
     </div>
   );
