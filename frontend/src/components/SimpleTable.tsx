@@ -1,10 +1,11 @@
+import type { ReactNode } from "react";
 import type { TableRow } from "../appTypes";
 
 export function SimpleTable({
   headers,
   rows,
 }: {
-  headers: string[];
+  headers: ReactNode[];
   rows: TableRow[];
 }) {
   return (
@@ -12,8 +13,8 @@ export function SimpleTable({
       <table>
         <thead>
           <tr>
-            {headers.map((header) => (
-              <th key={header}>{header}</th>
+            {headers.map((header, index) => (
+              <th key={index}>{header}</th>
             ))}
           </tr>
         </thead>

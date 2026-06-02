@@ -1,4 +1,5 @@
 import { ExternalLink, FileText, PackagePlus, Trash2 } from "lucide-react";
+import type { CandidateSort } from "../appTypes";
 import type { ProductCandidate, ProductCandidateStatus } from "../types";
 import {
   candidateStatusActionTitle,
@@ -26,8 +27,10 @@ export type ProductCandidateGroup = {
 
 type ProductCandidateTableProps = {
   candidateGroups: ProductCandidateGroup[];
+  candidateSort: CandidateSort;
   updatingCandidateIds: Set<number>;
   onShowEvidence: (candidate: ProductCandidate) => void;
+  onCandidateSortChange: (candidateSort: CandidateSort) => void;
   onUpdateStatus: (
     candidate: ProductCandidate,
     candidateStatus: ProductCandidateStatus,
@@ -98,8 +101,10 @@ export function CandidateStatusButtons({
 
 export function ProductCandidateTable({
   candidateGroups,
+  candidateSort,
   updatingCandidateIds,
   onShowEvidence,
+  onCandidateSortChange,
   onUpdateStatus,
   onPrefillProduct,
   onDeleteCandidate,
@@ -133,10 +138,22 @@ export function ProductCandidateTable({
             headers={[
               "商品名候補",
               "状態",
-              "価格",
+              <HeaderSortGroup
+                activeSort={candidateSort}
+                field="price"
+                label="価格"
+                onChange={onCandidateSortChange}
+                key="price"
+              />,
               "発売日",
               "販売元",
-              "利益期待度",
+              <HeaderSortGroup
+                activeSort={candidateSort}
+                field="expectation"
+                label="利益期待度"
+                onChange={onCandidateSortChange}
+                key="expectation"
+              />,
               "検出理由",
               "キーワード",
               "情報元",
@@ -228,6 +245,74 @@ export function ProductCandidateTable({
           />
         </section>
       ))}
+    </div>
+  );
+}
+
+function resolveNextCandidateSort(
+  current: CandidateSort,
+  field: "price" | "expectation",
+  direction: "asc" | "desc",
+): CandidateSort {
+  const target =
+    field === "price"
+      ? direction === "asc"
+        ? "price_asc"
+        : "price_desc"
+      : direction === "asc"
+        ? "expectation_asc"
+        : "expectation_desc";
+  return current === target ? "newest" : target;
+}
+
+function HeaderSortGroup({
+  activeSort,
+  field,
+  label,
+  onChange,
+}: {
+  activeSort: CandidateSort;
+  field: "price" | "expectation";
+  label: string;
+  onChange: (candidateSort: CandidateSort) => void;
+}) {
+  return (
+    <div className="sortable-header">
+      <span>{label}</span>
+      <span className="sort-buttons" aria-label={`${label}の並び替え`}>
+        <button
+          aria-pressed={
+            activeSort === (field === "price" ? "price_asc" : "expectation_asc")
+          }
+          className={`sort-button ${
+            activeSort === (field === "price" ? "price_asc" : "expectation_asc")
+              ? "active"
+              : ""
+          }`}
+          onClick={() => onChange(resolveNextCandidateSort(activeSort, field, "asc"))}
+          title={`${label}を昇順で並び替え`}
+          type="button"
+        >
+          ▲
+        </button>
+        <button
+          aria-pressed={
+            activeSort === (field === "price" ? "price_desc" : "expectation_desc")
+          }
+          className={`sort-button ${
+            activeSort === (field === "price" ? "price_desc" : "expectation_desc")
+              ? "active"
+              : ""
+          }`}
+          onClick={() =>
+            onChange(resolveNextCandidateSort(activeSort, field, "desc"))
+          }
+          title={`${label}を降順で並び替え`}
+          type="button"
+        >
+          ▼
+        </button>
+      </span>
     </div>
   );
 }

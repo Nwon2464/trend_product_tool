@@ -78,27 +78,14 @@ export function CollectionPanel({
               <option value="未登録">未登録</option>
             </select>
           </label>
-          <label className="compact-filter candidate-sort-filter">
-            並び替え
-            <select
-              value={candidateSort}
-              onChange={(event) =>
-                onCandidateSortChange(event.target.value as CandidateSort)
-              }
-            >
-              <option value="newest">新しい順</option>
-              <option value="price_desc">価格が高い順</option>
-              <option value="price_asc">価格が低い順</option>
-              <option value="expectation_desc">利益期待度が高い順</option>
-              <option value="expectation_asc">利益期待度が低い順</option>
-            </select>
-          </label>
         </div>
       </div>
       <ProductCandidateTable
         candidateGroups={candidateGroups}
+        candidateSort={candidateSort}
         updatingCandidateIds={updatingCandidateIds}
         onShowEvidence={onShowEvidence}
+        onCandidateSortChange={onCandidateSortChange}
         onUpdateStatus={onUpdateStatus}
         onPrefillProduct={onPrefillProduct}
         onDeleteCandidate={onDeleteCandidate}
