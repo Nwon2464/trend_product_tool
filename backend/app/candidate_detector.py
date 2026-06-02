@@ -2,15 +2,28 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import date
+from urllib.parse import parse_qs, urlparse
 
 from . import models, schemas
 
 DETECTION_RULES = [
-    ("予約開始", 22, ["予約開始", "予約受付", "予約販売", "先行予約", "抽選予約", "予約"]),
-    ("販売予定", 15, ["販売予定", "発売予定", "新発売", "発売日", "発売決定", "登場予定"]),
+    (
+        "予約開始",
+        22,
+        ["予約開始", "予約受付", "予約販売", "先行予約", "抽選予約", "予約"],
+    ),
+    (
+        "販売予定",
+        15,
+        ["販売予定", "発売予定", "新発売", "発売日", "発売決定", "登場予定"],
+    ),
     ("再販売", 22, ["再販売", "再販", "再入荷", "再登場", "追加販売"]),
     ("入荷", 14, ["入荷", "入荷予定", "在庫あり", "販売中", "在庫復活"]),
-    ("限定", 20, ["限定", "数量限定", "期間限定", "店舗限定", "オンライン限定", "受注限定"]),
+    (
+        "限定",
+        20,
+        ["限定", "数量限定", "期間限定", "店舗限定", "オンライン限定", "受注限定"],
+    ),
     ("コラボ", 18, ["コラボ", "コラボレーション", "タイアップ", "別注"]),
     ("廃盤", 24, ["廃盤", "終売", "販売終了", "生産終了", "販売休止"]),
     ("抽選販売", 18, ["抽選", "抽選販売", "抽選受付", "抽選申込"]),
@@ -224,8 +237,24 @@ NON_RELEASE_DATE_CONTEXT_KEYWORDS = [
     "ニュースの日付",
 ]
 
-FULL_DATE_PATTERN = re.compile(r"(20[0-9]{2})[年/-]\s*([0-9]{1,2})[月/-]\s*([0-9]{1,2})")
-MONTH_DAY_PATTERN = re.compile(r"([0-9]{1,2})\s*月\s*([0-9]{1,2})\s*日(?:\s*[（(][月火水木金土日][）)])?")
+BANDAI_CATALOG_PRODUCT_MARKERS = [
+    "商品情報",
+    "価格",
+    "売場",
+    "発売時期",
+    "対象年齢",
+]
+
+FULL_DATE_PATTERN = re.compile(
+    r"(20[0-9]{2})[年/-]\s*([0-9]{1,2})[月/-]\s*([0-9]{1,2})"
+)
+MONTH_DAY_PATTERN = re.compile(
+    r"([0-9]{1,2})\s*月\s*([0-9]{1,2})\s*日(?:\s*[（(][月火水木金土日][）)])?"
+)
+BANDAI_RELEASE_DATE_PATTERN = re.compile(
+    r"(?:発売時期|発売日|発売予定日?|販売時期|販売開始日?)\s*"
+    r"(20[0-9]{2})\s*年\s*([0-9]{1,2})\s*月\s*([0-9]{1,2})\s*日\s*(?:発売|販売)?"
+)
 
 
 @dataclass(frozen=True)
@@ -244,6 +273,9 @@ def build_candidate_from_source_log(
     db_keywords: list[models.Keyword] | None = None,
 ) -> schemas.ProductCandidateCreate | None:
     haystack = f"{source_log.title}\n{source_log.raw_text or ''}"
+    if is_bandai_catalog_item_url(source_log.url):
+        return build_bandai_catalog_candidate(source=source, source_log=source_log)
+
     if has_excluded_keyword(haystack):
         return None
     if is_noisy_title(source_log.title):
@@ -310,7 +342,9 @@ def build_candidate_from_source_log(
         return None
     sales_store = source.source_name
     product_name = clean_product_name(source_log.title)
-    candidate_category = db_keyword_matches[0].category if db_keyword_matches else source.target_category
+    candidate_category = (
+        db_keyword_matches[0].category if db_keyword_matches else source.target_category
+    )
 
     if price is not None:
         score += 6
@@ -322,7 +356,14 @@ def build_candidate_from_source_log(
         score += 12
         reasons.append("公式情報源")
     elif source.source_type == "retail":
-        retail_bonus = 8 if any(keyword in matched for keyword in ["入荷", "在庫あり", "在庫復活", "再入荷", "再販"]) else 4
+        retail_bonus = (
+            8
+            if any(
+                keyword in matched
+                for keyword in ["入荷", "在庫あり", "在庫復活", "再入荷", "再販"]
+            )
+            else 4
+        )
         score += retail_bonus
         reasons.append("小売・EC情報源")
 
@@ -358,13 +399,20 @@ def extract_price(text: str) -> int | None:
         return int(match.group(1).replace(",", ""))
 
     for match in re.finditer(r"([0-9,]{2,7})\s*円", text):
-        before = text[max(0, match.start() - 24):match.start()]
-        after = text[match.end():min(len(text), match.end() + 24)]
+        before = text[max(0, match.start() - 24) : match.start()]
+        after = text[match.end() : min(len(text), match.end() + 24)]
         context = f"{before}{match.group(0)}{after}"
         if any(keyword in context for keyword in PRICE_CONTEXT_KEYWORDS):
             return int(match.group(1).replace(",", ""))
 
     return None
+
+
+def extract_bandai_price(text: str) -> int | None:
+    price_match = re.search(r"価格\s*([0-9,]{2,7})\s*円\s*(?:\(税込\)|税込)?", text)
+    if price_match:
+        return int(price_match.group(1).replace(",", ""))
+    return extract_price(text)
 
 
 def extract_release_date(text: str) -> date | None:
@@ -380,6 +428,14 @@ def extract_release_date_with_reason(text: str) -> tuple[date | None, str]:
     return None, ""
 
 
+def extract_bandai_release_date(text: str) -> date | None:
+    match = BANDAI_RELEASE_DATE_PATTERN.search(text)
+    if not match:
+        return None
+    year, month, day = (int(value) for value in match.groups())
+    return build_date(year, month, day)
+
+
 def find_contextual_release_date(text: str) -> ReleaseDateMatch | None:
     matches: list[ReleaseDateMatch] = []
     base_year = infer_year_from_text(text)
@@ -390,7 +446,14 @@ def find_contextual_release_date(text: str) -> ReleaseDateMatch | None:
         if candidate:
             context_score = score_release_date_context(text, match.start(), match.end())
             if context_score > 0:
-                matches.append(ReleaseDateMatch(candidate, "発売日文脈から日付抽出", context_score, match.start()))
+                matches.append(
+                    ReleaseDateMatch(
+                        candidate,
+                        "発売日文脈から日付抽出",
+                        context_score,
+                        match.start(),
+                    )
+                )
 
     for match in MONTH_DAY_PATTERN.finditer(text):
         month, day = (int(value) for value in match.groups())
@@ -398,7 +461,14 @@ def find_contextual_release_date(text: str) -> ReleaseDateMatch | None:
         if candidate:
             context_score = score_release_date_context(text, match.start(), match.end())
             if context_score > 0:
-                matches.append(ReleaseDateMatch(candidate, "発売日文脈から日付抽出", context_score, match.start()))
+                matches.append(
+                    ReleaseDateMatch(
+                        candidate,
+                        "発売日文脈から日付抽出",
+                        context_score,
+                        match.start(),
+                    )
+                )
 
     if not matches:
         return None
@@ -432,17 +502,32 @@ def infer_year_from_text(text: str) -> int:
 
 
 def score_release_date_context(text: str, start: int, end: int) -> int:
-    before = text[max(0, start - 28):start]
-    after = text[end:min(len(text), end + 28)]
+    before = text[max(0, start - 28) : start]
+    after = text[end : min(len(text), end + 28)]
     context = f"{before}{text[start:end]}{after}"
 
     if any(keyword in context for keyword in NON_RELEASE_DATE_CONTEXT_KEYWORDS):
         return 0
 
     score = 0
-    if any(keyword in before[-14:] for keyword in ["発売日", "発売予定日", "発売開始日", "販売日", "販売予定日", "販売開始日", "予約開始日", "予約受付開始"]):
+    if any(
+        keyword in before[-14:]
+        for keyword in [
+            "発売日",
+            "発売予定日",
+            "発売開始日",
+            "販売日",
+            "販売予定日",
+            "販売開始日",
+            "予約開始日",
+            "予約受付開始",
+        ]
+    ):
         score += 80
-    if re.search(r"(発売日|発売予定日|発売開始日|販売日|販売予定日|販売開始日|予約開始日|予約受付開始)\s*[：:]\s*$", before):
+    if re.search(
+        r"(発売日|発売予定日|発売開始日|販売日|販売予定日|販売開始日|予約開始日|予約受付開始)\s*[：:]\s*$",
+        before,
+    ):
         score += 40
     if re.search(r"(から|より)\s*(発売|販売|予約)", after):
         score += 60
@@ -479,6 +564,9 @@ def has_product_opportunity_signal(
     db_keywords: list[models.Keyword] | None = None,
 ) -> bool:
     haystack = f"{title}\n{raw_text or ''}"
+    if is_bandai_catalog_item_url(url):
+        return is_bandai_product_candidate(url=url, text=haystack, title=title)
+
     if has_excluded_keyword(haystack) or is_noisy_title(title):
         return False
     if is_sanrio_noise_page(title, raw_text, url):
@@ -492,7 +580,9 @@ def has_product_opportunity_signal(
     if get_db_keyword_matches(haystack, db_keywords):
         return True
 
-    return has_product_page_signal(title=title, raw_text=raw_text, url=url, source=source)
+    return has_product_page_signal(
+        title=title, raw_text=raw_text, url=url, source=source
+    )
 
 
 def has_selected_status_signal(
@@ -537,16 +627,25 @@ def has_product_keyword_signal(
     selected_status_keywords: list[str] | None = None,
 ) -> bool:
     haystack = f"{title}\n{raw_text or ''}"
+    if is_bandai_catalog_item_url(url):
+        return is_bandai_product_candidate(url=url, text=haystack, title=title)
+
     status_keywords = set(selected_status_keywords or [])
 
     for keyword in get_db_keyword_matches(haystack, db_keywords):
         if not is_status_only_keyword(keyword.keyword, status_keywords):
             return True
 
-    if any(keyword in haystack for keyword in SELECTED_STATUS_PRODUCT_SIGNAL_KEYWORDS if keyword not in status_keywords):
+    if any(
+        keyword in haystack
+        for keyword in SELECTED_STATUS_PRODUCT_SIGNAL_KEYWORDS
+        if keyword not in status_keywords
+    ):
         return True
 
-    return has_product_page_signal(title=title, raw_text=raw_text, url=url, source=source)
+    return has_product_page_signal(
+        title=title, raw_text=raw_text, url=url, source=source
+    )
 
 
 def has_product_page_signal(
@@ -556,6 +655,8 @@ def has_product_page_signal(
     url: str,
     source: models.Source,
 ) -> bool:
+    if is_bandai_catalog_item_url(url):
+        return True
     if "productType=" in url:
         return False
     haystack = f"{title}\n{raw_text or ''}\n{source.target_category}"
@@ -573,7 +674,9 @@ def is_sanrio_noise_page(title: str, raw_text: str | None, url: str) -> bool:
         return True
     raw = raw_text or ""
     raw_noise_keywords = ["デジタルコンテンツ", "プレゼントキャンペーン", "壁紙"]
-    return any(keyword in raw for keyword in raw_noise_keywords) and not has_sales_signal(raw)
+    return any(
+        keyword in raw for keyword in raw_noise_keywords
+    ) and not has_sales_signal(raw)
 
 
 def is_sanrio_weak_path(url: str) -> bool:
@@ -581,7 +684,92 @@ def is_sanrio_weak_path(url: str) -> bool:
 
 
 def has_sales_signal(text: str) -> bool:
-    return any(keyword in text for keyword in SALES_SIGNAL_KEYWORDS) or extract_price(text) is not None
+    return (
+        any(keyword in text for keyword in SALES_SIGNAL_KEYWORDS)
+        or extract_price(text) is not None
+    )
+
+
+def is_bandai_catalog_item_url(url: str) -> bool:
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+    return (
+        parsed.netloc.endswith("bandai.co.jp")
+        and parsed.path == "/catalog/item.php"
+        and bool(query.get("jan_cd"))
+    )
+
+
+def extract_bandai_product_name(text: str, title: str) -> str:
+    title_parts = [
+        part.strip() for part in re.split(r"\s*[｜|]\s*", title) if part.strip()
+    ]
+    for part in title_parts:
+        if part not in {"バンダイ 商品・サービスサイト", "商品情報"} and len(part) >= 4:
+            return part
+
+    marker_match = re.search(r"TOP\s+商品情報\s+(.+?)\s+\1\s+", text)
+    if marker_match:
+        return marker_match.group(1).strip()
+
+    return clean_product_name(title)
+
+
+def is_bandai_product_candidate(*, url: str, text: str, title: str) -> bool:
+    if not is_bandai_catalog_item_url(url):
+        return False
+    product_name = extract_bandai_product_name(text, title)
+    if len(product_name) < 4 or is_noisy_title(product_name):
+        return False
+    return any(marker in text for marker in BANDAI_CATALOG_PRODUCT_MARKERS)
+
+
+def build_bandai_catalog_candidate(
+    *,
+    source: models.Source,
+    source_log: models.SourceLog,
+) -> schemas.ProductCandidateCreate | None:
+    haystack = f"{source_log.title}\n{source_log.raw_text or ''}"
+    if not is_bandai_product_candidate(
+        url=source_log.url, text=haystack, title=source_log.title
+    ):
+        return None
+
+    product_name = extract_bandai_product_name(haystack, source_log.title)
+    price = extract_bandai_price(haystack)
+    release_date = extract_bandai_release_date(haystack)
+
+    matched = ["Bandai公式商品ページ"]
+    reasons = ["Bandai公式catalog商品URL"]
+    score = 42
+
+    if release_date is not None:
+        matched.append("発売日")
+        score += 10
+        reasons.append("発売時期ラベルから日付抽出")
+    if price is not None:
+        matched.append("価格情報")
+        score += 8
+        reasons.append("価格ラベルから価格抽出")
+    if source.source_type == "official":
+        score += 12
+        reasons.append("公式情報源")
+    if product_name != source_log.title:
+        reasons.append("商品名を整形")
+
+    return schemas.ProductCandidateCreate(
+        source_log_id=source_log.id,
+        category=source.target_category,
+        product_name=product_name,
+        price=price,
+        release_date=release_date,
+        sales_store=source.source_name,
+        source_url=source_log.url,
+        detected_reason="; ".join(reasons),
+        detected_keywords=json.dumps(sorted(set(matched)), ensure_ascii=False),
+        profit_expectation=min(score, 100),
+        candidate_status="new",
+    )
 
 
 def get_detection_keywords() -> list[str]:
@@ -614,10 +802,16 @@ def get_matched_keywords(text: str, keywords: list[str]) -> list[str]:
     return [keyword for keyword in keywords if keyword and keyword in text]
 
 
-def get_db_keyword_matches(text: str, db_keywords: list[models.Keyword] | None) -> list[models.Keyword]:
+def get_db_keyword_matches(
+    text: str, db_keywords: list[models.Keyword] | None
+) -> list[models.Keyword]:
     if not db_keywords:
         return []
-    return [keyword for keyword in db_keywords if keyword.is_active and keyword.keyword and keyword.keyword in text]
+    return [
+        keyword
+        for keyword in db_keywords
+        if keyword.is_active and keyword.keyword and keyword.keyword in text
+    ]
 
 
 def is_status_only_keyword(keyword: str, selected_status_keywords: set[str]) -> bool:
@@ -637,17 +831,37 @@ def clean_product_name(title: str) -> str:
     product_name = re.sub(r"\s+", " ", title).strip()
     product_name = re.sub(r"\s*[｜|]\s*サンリオ\s*$", "", product_name)
     product_name = product_name.replace("Sanrio＋会員】", "【Sanrio＋会員】")
-    product_name = re.sub(r"^[【\[]?(ニュース|お知らせ|商品情報|新着情報)[】\]]?\s*[:：-]?\s*", "", product_name)
+    product_name = re.sub(
+        r"^[【\[]?(ニュース|お知らせ|商品情報|新着情報)[】\]]?\s*[:：-]?\s*",
+        "",
+        product_name,
+    )
     quoted_match = re.search(r"「([^」]{4,120})」", product_name)
     if quoted_match and re.search(r"(登場|再登場|発売|販売|予約)", product_name):
         product_name = quoted_match.group(1)
     for pattern in TITLE_CLEANUP_PATTERNS:
         product_name = re.sub(pattern, "", product_name)
-    product_name = re.sub(r"(20[0-9]{2})[年/-]\s*([0-9]{1,2})[月/-]\s*([0-9]{1,2})\s*日?(発売|販売|登場|予定)?", "", product_name)
-    product_name = re.sub(r"([0-9]{1,2})\s*月\s*([0-9]{1,2})\s*日(?:発売|販売|登場|予定)?", "", product_name)
-    product_name = re.sub(r"(?:税込|税抜|価格|メーカー希望小売価格)?\s*[¥￥]?\s*[0-9,]{2,7}\s*円(?:\\(税込\\)|税込)?", "", product_name)
+    product_name = re.sub(
+        r"(20[0-9]{2})[年/-]\s*([0-9]{1,2})[月/-]\s*([0-9]{1,2})\s*日?(発売|販売|登場|予定)?",
+        "",
+        product_name,
+    )
+    product_name = re.sub(
+        r"([0-9]{1,2})\s*月\s*([0-9]{1,2})\s*日(?:発売|販売|登場|予定)?",
+        "",
+        product_name,
+    )
+    product_name = re.sub(
+        r"(?:税込|税抜|価格|メーカー希望小売価格)?\s*[¥￥]?\s*[0-9,]{2,7}\s*円(?:\\(税込\\)|税込)?",
+        "",
+        product_name,
+    )
     product_name = re.sub(r"[¥￥]\s*[0-9,]{2,7}", "", product_name)
-    product_name = re.sub(r"(予約開始|予約受付|発売予定|新発売|再販売|再販|再入荷|入荷|在庫あり|数量限定|期間限定|限定)", "", product_name)
+    product_name = re.sub(
+        r"(予約開始|予約受付|発売予定|新発売|再販売|再販|再入荷|入荷|在庫あり|数量限定|期間限定|限定)",
+        "",
+        product_name,
+    )
     product_name = re.sub(r"\s+", " ", product_name)
     product_name = product_name.strip(" -:：｜|【】[]")
     return product_name or title.strip()
