@@ -41,6 +41,7 @@ export const sortOptions = [
 ];
 
 export const SCRAPING_MIN_INTERVAL_SECONDS = 300;
+export const DEFAULT_CANDIDATE_LIMIT = 10;
 
 export const emptyProduct: ProductInput = {
   category: "ポケモンカード",

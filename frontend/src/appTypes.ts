@@ -17,7 +17,6 @@ export type ScrapingPrep = {
   category: string;
   status: string;
   sourceName: string;
-  candidateLimit: string;
 };
 
 export type ScrapingTarget = {

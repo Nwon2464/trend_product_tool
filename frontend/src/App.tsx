@@ -32,6 +32,7 @@ import { SourceFormModal } from "./components/SourceFormModal";
 import { SourceManagementPanel } from "./components/SourceManagementPanel";
 import { ToastContainer } from "./components/ToastContainer";
 import {
+  DEFAULT_CANDIDATE_LIMIT,
   SCRAPING_MIN_INTERVAL_SECONDS,
   emptyKeyword,
   emptyProduct,
@@ -105,7 +106,6 @@ export default function App() {
     category: "すべて",
     status: "すべて",
     sourceName: "",
-    candidateLimit: "10",
   });
   const [isScrapingRunning, setIsScrapingRunning] = useState(false);
   const [scrapingProgress, setScrapingProgress] = useState<
@@ -342,7 +342,6 @@ export default function App() {
       category: "すべて",
       status: "すべて",
       sourceName: "",
-      candidateLimit: "10",
     });
     setIsScrapingModalOpen(true);
   }, [resetScrapingModalState]);
@@ -701,7 +700,6 @@ export default function App() {
       const sourceIds = targets.map((target) => target.id);
       const selectedStatuses =
         scrapingPrep.status === "すべて" ? null : [scrapingPrep.status];
-      const maxCandidatesPerSource = Number(scrapingPrep.candidateLimit) || 10;
       appendTerminalLine("info", "POST /scraping-jobs");
       const job = await api.createScrapingJob({
         source_ids: sourceIds,
@@ -709,7 +707,7 @@ export default function App() {
           scrapingPrep.category === "すべて" ? null : scrapingPrep.category,
         selected_statuses: selectedStatuses,
         max_items_per_source: 10,
-        max_candidates_per_source: maxCandidatesPerSource,
+        max_candidates_per_source: DEFAULT_CANDIDATE_LIMIT,
         respect_robots: true,
         minimum_interval_seconds: SCRAPING_MIN_INTERVAL_SECONDS,
       });

@@ -135,84 +135,66 @@ export function ScrapingModal({
         )}
         <div className="scraping-modal-layout">
           <div className="scraping-modal-left">
-            <div className="prep-grid">
-              <label>
-                カテゴリ
-                <select
-                  value={scrapingPrep.category}
-                  onChange={(event) => {
-                    onPrepChange({
-                      ...scrapingPrep,
-                      category: event.target.value,
-                    });
-                    onAppendTerminalLine(
-                      `Category selected: ${event.target.value}`,
-                    );
-                  }}
-                >
-                  <option value="すべて">すべて</option>
-                  {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                ステータス
-                <select
-                  value={scrapingPrep.status}
-                  onChange={(event) => {
-                    onPrepChange({
-                      ...scrapingPrep,
-                      status: event.target.value,
-                    });
-                    onAppendTerminalLine(
-                      `Status selected: ${event.target.value}`,
-                    );
-                  }}
-                >
-                  <option value="すべて">すべて</option>
-                  {statusOptions.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                情報源名
-                <input
-                  placeholder="例: 公式, 入荷Now, サンリオ"
-                  value={scrapingPrep.sourceName}
-                  onChange={(event) =>
-                    onPrepChange({
-                      ...scrapingPrep,
-                      sourceName: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                候補上限
-                <select
-                  value={scrapingPrep.candidateLimit}
-                  onChange={(event) => {
-                    onPrepChange({
-                      ...scrapingPrep,
-                      candidateLimit: event.target.value,
-                    });
-                    onAppendTerminalLine(
-                      `Candidate limit selected: ${event.target.value}`,
-                    );
-                  }}
-                >
-                  <option value="1">1件だけ取得</option>
-                  <option value="5">5件まで取得</option>
-                  <option value="10">10件まで取得</option>
-                  <option value="30">30件まで取得</option>
-                </select>
-              </label>
+            <div className="scraping-prep-section">
+              <div className="prep-grid scraping-filter-grid">
+                <label>
+                  カテゴリ
+                  <select
+                    value={scrapingPrep.category}
+                    onChange={(event) => {
+                      onPrepChange({
+                        ...scrapingPrep,
+                        category: event.target.value,
+                      });
+                      onAppendTerminalLine(
+                        `Category selected: ${event.target.value}`,
+                      );
+                    }}
+                  >
+                    <option value="すべて">すべて</option>
+                    {categories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  ステータス
+                  <select
+                    value={scrapingPrep.status}
+                    onChange={(event) => {
+                      onPrepChange({
+                        ...scrapingPrep,
+                        status: event.target.value,
+                      });
+                      onAppendTerminalLine(
+                        `Status selected: ${event.target.value}`,
+                      );
+                    }}
+                  >
+                    <option value="すべて">すべて</option>
+                    {statusOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  情報源名
+                  <input
+                    placeholder="例: 公式, 入荷Now, サンリオ"
+                    value={scrapingPrep.sourceName}
+                    onChange={(event) =>
+                      onPrepChange({
+                        ...scrapingPrep,
+                        sourceName: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+              </div>
               <div className="url-panel">
                 <div className="url-panel-header">
                   <h3 className="subheading">対象URL</h3>
