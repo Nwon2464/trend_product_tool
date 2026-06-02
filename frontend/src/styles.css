@@ -421,6 +421,10 @@ textarea {
   min-width: 130px;
 }
 
+.candidate-sort-filter select {
+  min-width: 220px;
+}
+
 .toolbar-actions {
   align-items: center;
   display: inline-flex;

@@ -9,6 +9,7 @@ import {
 import { RefreshCw, Trash2, X } from "lucide-react";
 import { API_BASE_URL, api } from "./api";
 import type {
+  CandidateSort,
   ProductFilters,
   ScrapingPrep,
   ScrapingTargetProgress,
@@ -116,6 +117,7 @@ export default function App() {
   );
   const [sourceLogFilter, setSourceLogFilter] =
     useState<SourceLogFilter>("すべて");
+  const [candidateSort, setCandidateSort] = useState<CandidateSort>("newest");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -175,17 +177,55 @@ export default function App() {
     });
   }, [candidatesBySourceLogId, productSourceUrls, sourceLogFilter, sourceLogs]);
 
-  const sortedProductCandidates = useMemo(
-    () =>
-      [...productCandidates].sort((a, b) => {
-        const scoreDiff = b.profit_expectation - a.profit_expectation;
-        return (
-          scoreDiff ||
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  const sortedProductCandidates = useMemo(() => {
+    const createdAtDesc = (a: ProductCandidate, b: ProductCandidate) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    const comparablePrice = (value: number | null | undefined) => {
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+        return null;
+      }
+      return value;
+    };
+    const comparableExpectation = (value: number | null | undefined) => {
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        return null;
+      }
+      return value;
+    };
+    const compareWithUnknownLast = (
+      aValue: number | null,
+      bValue: number | null,
+      direction: "asc" | "desc",
+    ) => {
+      if (aValue === null && bValue === null) return 0;
+      if (aValue === null) return 1;
+      if (bValue === null) return -1;
+      return direction === "asc" ? aValue - bValue : bValue - aValue;
+    };
+
+    return [...productCandidates].sort((a, b) => {
+      if (candidateSort === "price_desc" || candidateSort === "price_asc") {
+        const priceDiff = compareWithUnknownLast(
+          comparablePrice(a.price),
+          comparablePrice(b.price),
+          candidateSort === "price_asc" ? "asc" : "desc",
         );
-      }),
-    [productCandidates],
-  );
+        return priceDiff || createdAtDesc(a, b);
+      }
+      if (
+        candidateSort === "expectation_desc" ||
+        candidateSort === "expectation_asc"
+      ) {
+        const expectationDiff = compareWithUnknownLast(
+          comparableExpectation(a.profit_expectation),
+          comparableExpectation(b.profit_expectation),
+          candidateSort === "expectation_asc" ? "asc" : "desc",
+        );
+        return expectationDiff || createdAtDesc(a, b);
+      }
+      return createdAtDesc(a, b);
+    });
+  }, [candidateSort, productCandidates]);
 
   const candidateGroups = useMemo(() => {
     const groups = new Map<string, ProductCandidate[]>();
@@ -207,13 +247,7 @@ export default function App() {
             0,
           ) / candidates.length,
         ),
-      }))
-      .sort((a, b) => {
-        const topScoreDiff =
-          (b.candidates[0]?.profit_expectation ?? 0) -
-          (a.candidates[0]?.profit_expectation ?? 0);
-        return topScoreDiff || b.candidates.length - a.candidates.length;
-      });
+      }));
   }, [sortedProductCandidates]);
 
   const deletableUnregisteredLogs = useMemo(
@@ -1142,11 +1176,13 @@ export default function App() {
             sourceLogCount={filteredSourceLogs.length}
             deletableUnregisteredLogCount={deletableUnregisteredLogs.length}
             sourceLogFilter={sourceLogFilter}
+            candidateSort={candidateSort}
             candidateGroups={candidateGroups}
             updatingCandidateIds={updatingCandidateIds}
             onOpenScrapingModal={openScrapingModal}
             onOpenDeleteLogsModal={() => setIsDeleteLogsModalOpen(true)}
             onSourceLogFilterChange={setSourceLogFilter}
+            onCandidateSortChange={setCandidateSort}
             onShowEvidence={setEvidenceCandidate}
             onUpdateStatus={(candidate, candidateStatus) =>
               void updateCandidateStatus(candidate, candidateStatus)

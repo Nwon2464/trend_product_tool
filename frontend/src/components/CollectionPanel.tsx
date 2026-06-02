@@ -1,5 +1,5 @@
 import { Search } from "lucide-react";
-import type { SourceLogFilter } from "../appTypes";
+import type { CandidateSort, SourceLogFilter } from "../appTypes";
 import type { ProductCandidate, ProductCandidateStatus } from "../types";
 import {
   ProductCandidateTable,
@@ -11,11 +11,13 @@ type CollectionPanelProps = {
   sourceLogCount: number;
   deletableUnregisteredLogCount: number;
   sourceLogFilter: SourceLogFilter;
+  candidateSort: CandidateSort;
   candidateGroups: ProductCandidateGroup[];
   updatingCandidateIds: Set<number>;
   onOpenScrapingModal: () => void;
   onOpenDeleteLogsModal: () => void;
   onSourceLogFilterChange: (sourceLogFilter: SourceLogFilter) => void;
+  onCandidateSortChange: (candidateSort: CandidateSort) => void;
   onShowEvidence: (candidate: ProductCandidate) => void;
   onUpdateStatus: (
     candidate: ProductCandidate,
@@ -30,11 +32,13 @@ export function CollectionPanel({
   sourceLogCount,
   deletableUnregisteredLogCount,
   sourceLogFilter,
+  candidateSort,
   candidateGroups,
   updatingCandidateIds,
   onOpenScrapingModal,
   onOpenDeleteLogsModal,
   onSourceLogFilterChange,
+  onCandidateSortChange,
   onShowEvidence,
   onUpdateStatus,
   onPrefillProduct,
@@ -72,6 +76,21 @@ export function CollectionPanel({
               <option value="候補検出">候補検出</option>
               <option value="登録済み">登録済み</option>
               <option value="未登録">未登録</option>
+            </select>
+          </label>
+          <label className="compact-filter candidate-sort-filter">
+            並び替え
+            <select
+              value={candidateSort}
+              onChange={(event) =>
+                onCandidateSortChange(event.target.value as CandidateSort)
+              }
+            >
+              <option value="newest">新しい順</option>
+              <option value="price_desc">価格が高い順</option>
+              <option value="price_asc">価格が低い順</option>
+              <option value="expectation_desc">利益期待度が高い順</option>
+              <option value="expectation_asc">利益期待度が低い順</option>
             </select>
           </label>
         </div>

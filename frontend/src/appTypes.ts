@@ -77,6 +77,12 @@ export type TableRow =
 
 export type SourceLogFilter = "すべて" | "候補検出" | "登録済み" | "未登録";
 export type SourceLogStatus = "候補検出" | "登録済み" | "未登録";
+export type CandidateSort =
+  | "newest"
+  | "price_desc"
+  | "price_asc"
+  | "expectation_desc"
+  | "expectation_asc";
 
 export type ProductFilters = {
   category: string;
